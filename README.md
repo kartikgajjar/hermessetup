@@ -1,4 +1,4 @@
-# hermessetup
+# Hermes Setup
 
 PowerShell scripts that make installing, updating, and reinstalling
 [Hermes Agent](https://hermes-agent.nousresearch.com/) on Windows simple
@@ -10,7 +10,21 @@ scripts turn "reinstall Hermes from scratch" into one safe command that
 brings back your configuration, credentials, cron jobs, and platform
 integrations exactly as they were.
 
-## Scripts
+## Installation
+
+Clone this repo, then run the install script from an elevated PowerShell
+prompt:
+
+```powershell
+git clone https://github.com/kartikgajjar/hermessetup.git
+cd hermessetup
+.\02-install-hermes-secure.ps1
+```
+
+This installs Hermes Agent fresh via the official installer and applies a
+hardened, Docker-sandboxed, manual-approval baseline config automatically.
+
+## Script
 
 | Script | Purpose |
 |---|---|
@@ -20,7 +34,7 @@ integrations exactly as they were.
 | `04-restore-hermes-state.ps1` | Restores everything `03` backed up onto a fresh install, reinstalls any optional platform packages (e.g. Discord), and starts the gateway. |
 | `05-update-hermes.ps1` | Runs `hermes update` with a bounded retry around a known Windows gateway-discovery race instead of letting it abort outright. |
 
-## Daily refresh
+## Clean Re-install
 
 Run these four scripts in order, from an elevated PowerShell prompt, to
 wipe and reinstall Hermes from scratch while keeping everything you've
