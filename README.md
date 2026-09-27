@@ -24,6 +24,33 @@ cd hermessetup
 This installs Hermes Agent fresh via the official installer and applies a
 hardened, Docker-sandboxed, manual-approval baseline config automatically.
 
+## Discord Gateway Setup
+
+Discord isn't configured by default on a new install. To enable it:
+
+1. Create a bot at the [Discord Developer Portal](https://discord.com/developers/applications) and copy its token.
+2. Add these to `%LOCALAPPDATA%\hermes\.env`:
+   ```
+   DISCORD_BOT_TOKEN=<your-bot-token>
+   DISCORD_ALLOWED_USERS=<your-discord-user-id>
+   ```
+3. Install the Discord package (optional platforms aren't installed by default):
+   ```powershell
+   hermes pm install --extra discord
+   ```
+4. Enable Discord as a platform:
+   ```powershell
+   hermes gateway setup
+   ```
+5. Start/restart the gateway:
+   ```powershell
+   hermes gateway restart
+   ```
+
+Once `DISCORD_BOT_TOKEN` is set, `04-restore-hermes-state.ps1` automates
+steps 3 and 5 on every future reinstall — this walkthrough only matters
+the first time.
+
 ## Script
 
 | Script | Purpose |
