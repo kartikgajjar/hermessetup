@@ -408,6 +408,29 @@ else {
         Write-Warning "  'olk' is registered as an MCP server but is no longer found on PATH."
     }
 
+    # olk-bulk (hermes/olk-bulk-mcp.py) is registered with an ABSOLUTE path to the
+    # bundled interpreter baked into mcp_servers.olk-bulk.command at add-time
+    # (confirmed 2026-09-27: `hermes mcp add --command` stores whatever path was
+    # given verbatim, it does not re-resolve it later). That path is versioned
+    # (tools\python-<version>\python.exe) and Hermes updates/reinstalls can bump
+    # the version, silently stranding a stale, nonexistent path in config.yaml.
+    # Re-point it at whatever interpreter actually exists post-update.
+    if ($McpServerNames -contains 'olk-bulk' -and $PythonExe) {
+        $registeredPython = (& $HermesCmd config get mcp_servers.olk-bulk.command 2>&1 | Out-String).Trim()
+        $normalizedRegistered = $registeredPython -replace '/', '\'
+        $normalizedCurrent = $PythonExe -replace '/', '\'
+        if ($normalizedRegistered -and $normalizedRegistered -ne $normalizedCurrent) {
+            Write-Warning "  'olk-bulk' points at a stale interpreter ($registeredPython) -- repointing to $PythonExe..."
+            & $HermesCmd config set --force mcp_servers.olk-bulk.command $PythonExe | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  Repointed 'olk-bulk' to the current bundled interpreter." -ForegroundColor Green
+            }
+            else {
+                Write-Warning "  Failed to repoint 'olk-bulk' (exit $LASTEXITCODE). Fix manually:`n    hermes config set --force mcp_servers.olk-bulk.command `"$PythonExe`""
+            }
+        }
+    }
+
     foreach ($serverName in $McpServerNames) {
         Write-Host "  Testing MCP server '$serverName'..."
         $testOutput = & $HermesCmd mcp test $serverName 2>&1 | Out-String

@@ -72,3 +72,48 @@ hermes mcp add olk --command olk --args mcp --account ekartka@hotmail.com
 
 Prompts to enable all 40 discovered tools — answer `y`. Verify with `hermes mcp test
 olk`.
+
+## Write/destructive tools are opt-in, and off by default
+
+`olk mcp` only exposes read tools unless you explicitly opt in with `--allow-write=...`
+/ `--allow-send=...` / `--allow-destructive=...`. To let Hermes move or delete mail:
+
+```
+hermes mcp add olk --command olk --args mcp --account ekartka@hotmail.com \
+  --allow-write=mail_move --allow-destructive=mail_delete
+```
+
+(re-adding an existing server name prompts `Overwrite? [y/N]` before the usual
+`Enable all N tools?` prompt — pipe two `y`s if scripting this non-interactively, or
+just answer both interactively.) `mail_delete` is Graph's standard delete (moves to
+Deleted Items, not a hard purge). Hermes's own approval gate
+(`tools/mcp_tool.py`: a tool call needs manual approval unless its `readOnlyHint`
+annotation is exactly `True` at discovery) still requires per-call approval under
+`approvals.mode: manual` for both — enabling them here doesn't bypass that.
+
+## Bulk move/delete: `olk mail move`/`mail delete` are single-message only
+
+Neither has a bulk mode — each takes exactly one message ID. For a "move/delete every
+message matching X" capability (search once, act on all matches, in one tool call
+instead of N), see `hermes/olk-bulk-mcp.py`: a small stdio MCP server that wraps
+repeated `olk mail search` + `mail move`/`mail delete` calls behind two tools,
+`bulk_move_messages` and `bulk_delete_messages`. Registered separately:
+
+```
+hermes mcp add olk-bulk --command "<hermes>\tools\python-<version>\python.exe" \
+  --args "C:\LocalCode\ai\hermes\olk-bulk-mcp.py" --account ekartka@hotmail.com
+```
+
+Both tools default to `dry_run=true` (report matches without acting) and cap `top` at
+200 per call, on top of the same manual-approval gate as above — two independent
+safety layers before anything actually moves or deletes.
+
+**Gotcha 4: the interpreter path is pinned, not resolved.** `hermes mcp add
+--command` stores whatever path you give it verbatim in `config.yaml` — it's never
+re-resolved later. Since the bundled interpreter's path is versioned
+(`tools\python-<version>\python.exe`), a Hermes update/reinstall that bumps the
+Python version silently strands `olk-bulk` pointing at a path that no longer exists.
+`05-update-hermes.ps1`'s post-update MCP verification step now detects and
+self-heals this (re-points `mcp_servers.olk-bulk.command` at whatever interpreter
+actually exists after the update) — if you ever add another Python-based MCP server
+by hand, give it the same treatment or expect this same failure mode.
