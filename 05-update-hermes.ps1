@@ -168,6 +168,70 @@ function Test-HermesGatewayRunningViaPlan {
     }
 }
 
+# ---------------------------------------------------------------------------
+# MCP/tool post-update verification helpers.
+#
+# `hermes update` reinstalls hermes-agent's dependencies from pyproject.toml's
+# BASE set only (confirmed 2026-09-27 via `hermes update --help`: "Pull the
+# latest changes from git and reinstall dependencies") -- optional extras
+# like `mcp` are not part of that base set. hermes-agent runs on a bundled,
+# versioned standalone Python interpreter under $HermesHome\tools\python-*\
+# (no venv/pyvenv.cfg), so a routine update can silently strand the same
+# "mcp_servers is configured but ModuleNotFoundError: No module named 'mcp'"
+# gap a fresh install produces (see hermes/notes-mcp-outlook-olk.md,
+# gotcha 3). Everything below only ever adds a Python package or reads
+# process/PATH state -- it never stops a process or touches Hermes's runtime
+# files, consistent with this script's existing rule.
+# ---------------------------------------------------------------------------
+
+function Get-HermesBundledPython {
+    $pythonDir = Get-ChildItem -Path (Join-Path $HermesHome "tools") -Directory -Filter "python-*" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $pythonDir) { return $null }
+    $exe = Join-Path $pythonDir.FullName "python.exe"
+    if (Test-Path -LiteralPath $exe) { return $exe }
+    return $null
+}
+
+function Get-UvExe {
+    # Prefer whatever's on PATH (what we've been invoking manually); fall
+    # back to Hermes's own bundled copy under tools\uv-*\ if the global one
+    # isn't present on this machine/shell.
+    $cmd = Get-Command uv -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $uvDir = Get-ChildItem -Path (Join-Path $HermesHome "tools") -Directory -Filter "uv-*" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($uvDir) {
+        $exe = Join-Path $uvDir.FullName "uv.exe"
+        if (Test-Path -LiteralPath $exe) { return $exe }
+    }
+    return $null
+}
+
+function Test-McpPythonPackage {
+    param([Parameter(Mandatory)][string]$PythonExe)
+    & $PythonExe -c "import mcp" *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Get-ConfiguredMcpServerNames {
+    # Parses `hermes mcp list`'s table (no --json support, confirmed
+    # 2026-09-27: `hermes mcp list --json` errors "unrecognized arguments").
+    # A server row is "<name>" followed by 2+ spaces then more content; the
+    # header row's "Name  Transport ..." is excluded by name, and the
+    # box-drawing separator row never matches (─ isn't a word character).
+    $output = & $HermesCmd mcp list 2>&1 | Out-String
+    if ($output -match 'No MCP servers configured') { return @() }
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($output -split "`r?`n")) {
+        if ($line -match '^\s*([A-Za-z0-9_.-]+)\s{2,}\S') {
+            $candidate = $Matches[1]
+            if ($candidate -ne 'Name') { $names.Add($candidate) }
+        }
+    }
+    return $names
+}
+
 if ($Plan) {
     Write-Host "Running 'hermes update --plan' (read-only, no retries)..."
     & $HermesCmd update --plan @ExtraArgs
@@ -279,6 +343,82 @@ else {
             Write-Warning "Gateway did not report running within ${HealthCheckTimeoutSeconds}s after update (checked both 'gateway status' and 'update --plan')."
             Write-Host "Update itself succeeded (exit 0); this only means post-update verification timed out." -ForegroundColor Yellow
             Write-Host "Check manually: hermes gateway status"
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Post-update MCP/tool verification.
+#
+# A successful 'hermes update' does not guarantee configured MCP servers
+# still work -- see the helper functions' header comment above for why. This
+# re-checks the 'mcp' Python package (self-healing it if the update stripped
+# it), confirms 'olk' is still resolvable on PATH (an external Go binary
+# 'hermes update' never touches, but worth catching here rather than at the
+# next agent turn that tries to use it), and re-tests every configured MCP
+# server end-to-end.
+# ---------------------------------------------------------------------------
+
+Write-Host ""
+Write-Host "Verifying MCP tooling after update..."
+
+$McpServerNames = Get-ConfiguredMcpServerNames
+
+if ($McpServerNames.Count -eq 0) {
+    Write-Host "  No MCP servers configured; skipping MCP verification."
+}
+else {
+    $PythonExe = Get-HermesBundledPython
+    if (-not $PythonExe) {
+        Write-Warning "  Could not find Hermes's bundled Python interpreter under $HermesHome\tools -- cannot verify/repair the 'mcp' package."
+    }
+    elseif (Test-McpPythonPackage -PythonExe $PythonExe) {
+        Write-Host "  'mcp' Python package present in $PythonExe." -ForegroundColor Green
+    }
+    else {
+        Write-Warning "  'mcp' Python package missing after update (known gap -- update only reinstalls base deps, not the 'mcp' extra). Reinstalling..."
+        $UvExe = Get-UvExe
+        if (-not $UvExe) {
+            Write-Warning "  'uv' not found (checked PATH and $HermesHome\tools\uv-*\). Fix manually:`n    uv pip install -e `".[mcp]`" --python `"$PythonExe`""
+        }
+        else {
+            $HermesAgentDir = Join-Path $HermesHome "hermes-agent"
+            Push-Location $HermesAgentDir
+            try {
+                & $UvExe pip install -e ".[mcp]" --python $PythonExe
+                $reinstallExit = $LASTEXITCODE
+            }
+            finally {
+                Pop-Location
+            }
+            if ($reinstallExit -eq 0 -and (Test-McpPythonPackage -PythonExe $PythonExe)) {
+                Write-Host "  Reinstalled 'mcp' extra successfully." -ForegroundColor Green
+            }
+            else {
+                Write-Warning "  Failed to reinstall the 'mcp' extra (exit $reinstallExit). MCP servers will not work until this is fixed manually:`n    uv pip install -e `".[mcp]`" --python `"$PythonExe`""
+            }
+        }
+    }
+
+    $OlkCmd = Get-Command olk -ErrorAction SilentlyContinue
+    if ($OlkCmd) {
+        Write-Host "  'olk' found on PATH: $($OlkCmd.Source)" -ForegroundColor Green
+    }
+    elseif ($McpServerNames -contains 'olk') {
+        Write-Warning "  'olk' is registered as an MCP server but is no longer found on PATH."
+    }
+
+    foreach ($serverName in $McpServerNames) {
+        Write-Host "  Testing MCP server '$serverName'..."
+        $testOutput = & $HermesCmd mcp test $serverName 2>&1 | Out-String
+        if ($testOutput -match 'Tools discovered') {
+            $countMatch = [regex]::Match($testOutput, 'Tools discovered:\s*(\d+)')
+            $count = if ($countMatch.Success) { $countMatch.Groups[1].Value } else { "?" }
+            Write-Host "    OK ($count tools)." -ForegroundColor Green
+        }
+        else {
+            Write-Warning "    '$serverName' failed its post-update connectivity test:"
+            ($testOutput.Trim() -split "`r?`n") | ForEach-Object { Write-Host "      $_" }
         }
     }
 }
