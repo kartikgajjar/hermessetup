@@ -20,17 +20,25 @@ integrations exactly as they were.
 | `04-restore-hermes-state.ps1` | Restores everything `03` backed up onto a fresh install, reinstalls any optional platform packages (e.g. Discord), and starts the gateway. |
 | `05-update-hermes.ps1` | Runs `hermes update` with a bounded retry around a known Windows gateway-discovery race instead of letting it abort outright. |
 
-## Daily reinstall workflow
+## Daily refresh
+
+Run these four scripts in order, from an elevated PowerShell prompt, to
+wipe and reinstall Hermes from scratch while keeping everything you've
+configured:
 
 ```powershell
-.\03-backup-hermes-state.ps1
-.\01-cleanup-hermes.ps1 -Force
-.\02-install-hermes-secure.ps1
-.\04-restore-hermes-state.ps1
+.\03-backup-hermes-state.ps1          # 1. Save current state to OneDrive
+.\01-cleanup-hermes.ps1 -Force        # 2. Fully remove Hermes
+.\02-install-hermes-secure.ps1        # 3. Fresh install + hardened baseline
+.\04-restore-hermes-state.ps1         # 4. Restore state, packages, gateway
 ```
 
-Backup location defaults to `%USERPROFILE%\OneDrive\Documents\Hermes`;
-override with `-Destination` / `-Source` on the backup/restore scripts.
+- Backup location defaults to `%USERPROFILE%\OneDrive\Documents\Hermes`;
+  override with `-Destination` (script `03`) / `-Source` (script `04`).
+- Step 4 also reinstalls any optional platform package your `.env` needs
+  (e.g. Discord) and starts the gateway for you — no manual restart needed.
+- Run this whenever you want the latest Hermes commit without losing
+  config, credentials, cron jobs, or platform pairings.
 
 ## Requirements
 
