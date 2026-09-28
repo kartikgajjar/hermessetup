@@ -44,7 +44,12 @@ def _olk(*args: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     cmd = ["olk", *args]
     if ACCOUNT:
         cmd += ["--account", ACCOUNT]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    # Explicit UTF-8: subprocess.run's default text-mode encoding is the platform's
+    # (cp1252 on Windows), which routinely can't decode real mail content (curly
+    # quotes, em-dashes, emoji, etc.) -- confirmed 2026-09-28, a UnicodeDecodeError
+    # crashed a reader thread on a Deleted Items listing. errors="replace" so a truly
+    # undecodable byte degrades to a replacement char instead of crashing the call.
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
 
 
 def _search(query: str, top: int) -> list[dict[str, Any]]:
@@ -110,7 +115,9 @@ def bulk_delete_messages(query: str, top: int = 50, dry_run: bool = True) -> dic
     deleted: list[str] = []
     failed: list[dict[str, str]] = []
     for m in matches:
-        proc = _olk("mail", "delete", m["id"])
+        # `olk mail delete` refuses without --force (confirmed 2026-09-27: fails fast and
+        # cleanly, "use --force to confirm deletion", exit 1 -- it does not hang or prompt).
+        proc = _olk("mail", "delete", "--force", m["id"])
         label = m.get("subject") or m["id"]
         if proc.returncode == 0:
             deleted.append(label)
