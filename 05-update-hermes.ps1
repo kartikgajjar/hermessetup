@@ -2,8 +2,9 @@
 <#
 .SYNOPSIS
     Runs `hermes update` with a bounded retry around a known, confirmed
-    Windows race in Hermes's own gateway-discovery pre-flight, instead of
-    letting a single transient failure abort the whole update.
+    Windows race in Hermes's own gateway-discovery pre-flight, and a patient
+    wait-and-retry around another update already holding Hermes's own update
+    lock, instead of letting either abort the whole run.
 
 .DESCRIPTION
     This wraps the installed `hermes` CLI as a black box. It does not patch
@@ -49,6 +50,20 @@
     don't clear it, the real fix belongs upstream in
     _is_gateway_runtime_lock_active_strict.
 
+    Separately, `hermes update` also refuses outright (exit code
+    UPDATE_EXIT_CONCURRENT = 2) when another update -- a second terminal, the
+    Desktop app, or a dashboard -- already holds `hermes_cli\update_lock.py`'s
+    shared `.hermes-update-in-progress` marker (2026-09-30, reproduced via a
+    genuinely still-running prior invocation). That module's own
+    `read_live_update()` already self-heals: a marker whose pid is dead, or
+    whose age exceeds its own `UPDATE_MARKER_MAX_AGE_SECONDS` (20 min), is
+    deleted right there on the next check. So the correct response to this
+    error is to wait for the real holder to finish (or go stale) and retry --
+    never to kill the holding process or touch the marker file directly, which
+    would risk exactly the corruption its own error text warns about
+    ("Running two at once would corrupt the install") if the holder turns out
+    to still be genuinely working.
+
     This script never calls Stop-Process and never deletes or moves any
     Hermes file. It only runs `hermes update` (and `hermes gateway status`
     for a post-update health check), and interprets their output.
@@ -71,6 +86,21 @@
 .PARAMETER RetryDelaySeconds
     Delay between retry attempts. Default 5.
 
+.PARAMETER ConcurrentUpdateMaxWaitSeconds
+    When 'hermes update' refuses because another update already holds its
+    lock (hermes_cli\update_lock.py's shared marker file, exit code 2), how
+    long to wait for it to finish or go stale before giving up. Default 1500
+    (25 min) -- slightly past the marker's own 20-minute staleness ceiling
+    (UPDATE_MARKER_MAX_AGE_SECONDS), so a genuinely dead/orphaned holder is
+    guaranteed to self-clear (read_live_update() deletes a marker whose pid
+    is dead or over-age on its own next check) within this window without
+    this script ever touching the marker file or the other process.
+
+.PARAMETER ConcurrentUpdatePollIntervalSeconds
+    Delay between re-checks while waiting out another update's lock. Default
+    30 -- a real update (git pull + dependency sync) takes minutes, so this
+    polls far less aggressively than the gateway-discovery race retry above.
+
 .PARAMETER HealthCheckTimeoutSeconds
     How long to poll `hermes gateway status` after a successful update
     before warning (not failing) that the gateway isn't confirmed running
@@ -89,6 +119,8 @@ param(
     [switch]$Force,
     [int]$MaxAttempts = 3,
     [int]$RetryDelaySeconds = 5,
+    [int]$ConcurrentUpdateMaxWaitSeconds = 1500,
+    [int]$ConcurrentUpdatePollIntervalSeconds = 30,
     [int]$HealthCheckTimeoutSeconds = 120,
     [int]$HealthCheckIntervalSeconds = 3,
     [string[]]$ExtraArgs = @()
@@ -125,6 +157,17 @@ $RetryableErrorPatterns = @(
     'gateway runtime lock probe failed',
     'runtime metadata does not identify a live gateway'
 )
+
+# Exact text from hermes_cli\update_lock.py's describe_holder() -- a DIFFERENT update
+# process (or the Desktop/dashboard updater) already holds the shared
+# .hermes-update-in-progress marker. Handled separately from the gateway-discovery race
+# above: read_live_update() in that same file already self-heals a stale holder (dead pid,
+# or older than its own UPDATE_MARKER_MAX_AGE_SECONDS = 20 min ceiling) by deleting the
+# marker on its NEXT check -- so the correct, safe response is to wait and retry, never to
+# kill the holding process or touch the marker file ourselves. Killing a genuinely
+# still-running update is exactly the corruption scenario the lock exists to prevent
+# (its own error text: "Running two at once would corrupt the install").
+$ConcurrentUpdatePattern = 'Another Hermes update is already running'
 
 Write-Host ""
 Write-Host "Hermes update" -ForegroundColor Cyan
@@ -267,6 +310,37 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
 
     if ($updateExitCode -eq 0) {
         break
+    }
+
+    if ($text -match [regex]::Escape($ConcurrentUpdatePattern)) {
+        Write-Host ""
+        Write-Warning "Another 'hermes update' (or the Desktop/dashboard updater) holds the update lock."
+        Write-Host ("Waiting up to {0:N1} more minute(s) for it to finish or go stale -- Hermes's own lock " -f ($ConcurrentUpdateMaxWaitSeconds / 60)) `
+            "self-clears a dead/20-min-old holder on its next check, so this script is not killing anything or touching the marker file." -ForegroundColor Yellow
+
+        $waitDeadline = (Get-Date).AddSeconds($ConcurrentUpdateMaxWaitSeconds)
+        while ((Get-Date) -lt $waitDeadline) {
+            Start-Sleep -Seconds $ConcurrentUpdatePollIntervalSeconds
+            Write-Host "  Re-checking..."
+            $output = & $HermesCmd update @updateArgs 2>&1
+            $updateExitCode = $LASTEXITCODE
+            $text = ($output | Out-String)
+            $output | ForEach-Object { Write-Host $_ }
+
+            if ($updateExitCode -eq 0) { break }
+            if ($text -notmatch [regex]::Escape($ConcurrentUpdatePattern)) { break }  # different failure now -- fall through below
+        }
+
+        if ($updateExitCode -eq 0) {
+            break
+        }
+        if ($text -match [regex]::Escape($ConcurrentUpdatePattern)) {
+            Write-Host ""
+            Write-Warning ("Still locked by another update after {0:N1} minute(s). Not killing it -- check 'hermes logs' and any open Desktop/dashboard window for a stuck updater, then re-run this script." -f ($ConcurrentUpdateMaxWaitSeconds / 60))
+            exit $updateExitCode
+        }
+        # A different error surfaced after the wait -- fall through to the normal
+        # retryable/non-retryable classification below using this latest $text/$updateExitCode.
     }
 
     $isRetryable = $false
