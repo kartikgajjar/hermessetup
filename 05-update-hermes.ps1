@@ -275,6 +275,61 @@ function Get-ConfiguredMcpServerNames {
     return $names
 }
 
+# ---------------------------------------------------------------------------
+# Run 'hermes update' with visible progress.
+#
+# hermes update's own stdout is very likely fully block-buffered once it's not
+# attached to a real terminal -- Python's default for non-TTY stdout -- which is
+# exactly the situation once PowerShell captures `& cmd 2>&1` into a variable.
+# Confirmed 2026-09-30: nothing printed to the console for several minutes on a
+# real run, while logs\update.log was clearly being appended to the whole time
+# (its own logging, independent of stdout). So: run the actual command as a
+# background job (its real output/exit code still drives the retry
+# classification below, unchanged) and, IN PARALLEL, tail update.log -- which
+# IS written incrementally and promptly -- purely so something visibly moves on
+# screen while a real update runs for minutes.
+# ---------------------------------------------------------------------------
+
+function Invoke-HermesUpdateWithProgress {
+    param([Parameter(Mandatory)][string[]]$UpdateArgs)
+
+    $logPath = Join-Path $HermesHome "logs\update.log"
+    $lastLineCount = 0
+    if (Test-Path -LiteralPath $logPath) {
+        $lastLineCount = (Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
+    }
+
+    $job = Start-Job -ScriptBlock {
+        param($cmd, $cmdArgs)
+        $out = & $cmd @cmdArgs 2>&1
+        [pscustomobject]@{ Output = ($out | Out-String); ExitCode = $LASTEXITCODE }
+    } -ArgumentList $HermesCmd, $UpdateArgs
+
+    while ($job.State -eq 'Running') {
+        Start-Sleep -Seconds 2
+        if (Test-Path -LiteralPath $logPath) {
+            $allLines = @(Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue)
+            if ($allLines.Count -gt $lastLineCount) {
+                $allLines[$lastLineCount..($allLines.Count - 1)] | ForEach-Object { Write-Host "  | $_" }
+                $lastLineCount = $allLines.Count
+            }
+        }
+    }
+
+    $result = Receive-Job -Job $job -Wait
+    Remove-Job -Job $job -Force
+
+    # Catch up on anything appended between the last poll and job completion.
+    if (Test-Path -LiteralPath $logPath) {
+        $allLines = @(Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue)
+        if ($allLines.Count -gt $lastLineCount) {
+            $allLines[$lastLineCount..($allLines.Count - 1)] | ForEach-Object { Write-Host "  | $_" }
+        }
+    }
+
+    return $result
+}
+
 if ($Plan) {
     Write-Host "Running 'hermes update --plan' (read-only, no retries)..."
     & $HermesCmd update --plan @ExtraArgs
@@ -303,10 +358,9 @@ $updateExitCode = 1
 for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
     Write-Host "Running 'hermes update' (attempt $attempt/$MaxAttempts)..."
 
-    $output = & $HermesCmd update @updateArgs 2>&1
-    $updateExitCode = $LASTEXITCODE
-    $text = ($output | Out-String)
-    $output | ForEach-Object { Write-Host $_ }
+    $result = Invoke-HermesUpdateWithProgress -UpdateArgs $updateArgs
+    $updateExitCode = $result.ExitCode
+    $text = $result.Output
 
     if ($updateExitCode -eq 0) {
         break
@@ -322,10 +376,9 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         while ((Get-Date) -lt $waitDeadline) {
             Start-Sleep -Seconds $ConcurrentUpdatePollIntervalSeconds
             Write-Host "  Re-checking..."
-            $output = & $HermesCmd update @updateArgs 2>&1
-            $updateExitCode = $LASTEXITCODE
-            $text = ($output | Out-String)
-            $output | ForEach-Object { Write-Host $_ }
+            $result = Invoke-HermesUpdateWithProgress -UpdateArgs $updateArgs
+            $updateExitCode = $result.ExitCode
+            $text = $result.Output
 
             if ($updateExitCode -eq 0) { break }
             if ($text -notmatch [regex]::Escape($ConcurrentUpdatePattern)) { break }  # different failure now -- fall through below
