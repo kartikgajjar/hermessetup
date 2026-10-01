@@ -89,8 +89,10 @@ if ($Uninstall) {
 if ($Install) {
     $shell  = (Get-Process -Id $PID).Path   # same PowerShell edition that ran -Install
     $script = $PSCommandPath
-    $action = New-ScheduledTaskAction -Execute $shell `
-        -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`""
+    # Launched via `conhost.exe --headless`: pwsh's own -WindowStyle Hidden only hides the console
+    # AFTER it has been created, so a 10-minute task flashes a window on screen every run.
+    $action = New-ScheduledTaskAction -Execute "conhost.exe" `
+        -Argument "--headless `"$shell`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$script`""
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
         -RepetitionInterval (New-TimeSpan -Minutes 10)
     $logon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
