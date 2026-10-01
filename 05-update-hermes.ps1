@@ -252,9 +252,20 @@ function Get-UvExe {
 }
 
 function Test-McpPythonPackage {
+    # try/catch, not just *> $null: confirmed 2026-09-29 that a genuinely-missing 'mcp' module
+    # (Python prints a traceback to stderr, exits 1) surfaced as a PowerShell terminating error
+    # under this script's $ErrorActionPreference = "Stop" instead of just a nonzero $LASTEXITCODE
+    # -- *> $null suppresses the DISPLAY of that content but not PowerShell's own error escalation.
+    # Without this, the exact case this function exists to detect (mcp missing) crashed the script
+    # instead of triggering the reinstall path below.
     param([Parameter(Mandatory)][string]$PythonExe)
-    & $PythonExe -c "import mcp" *> $null
-    return ($LASTEXITCODE -eq 0)
+    try {
+        & $PythonExe -c "import mcp" *> $null
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch {
+        return $false
+    }
 }
 
 function Get-ConfiguredMcpServerNames {
@@ -291,17 +302,33 @@ function Get-ConfiguredMcpServerNames {
 # ---------------------------------------------------------------------------
 
 function Invoke-HermesUpdateWithProgress {
-    param([Parameter(Mandatory)][string[]]$UpdateArgs)
+    # AllowEmptyCollection: PowerShell rejects binding @() to a mandatory [string[]] parameter
+    # by default ("Cannot bind argument... because it is an empty array") -- confirmed 2026-09-29,
+    # this crashed the very first real run with no -NoGatewayRestart/-ExtraArgs (the common case).
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$UpdateArgs)
 
     $logPath = Join-Path $HermesHome "logs\update.log"
+    # Must use the SAME counting method as the polling loop below (plain array .Count).
+    # Measure-Object -Line silently undercounts blank lines (confirmed 2026-09-29: 51 vs the
+    # true 100+ on this file, which is full of blank separator lines) -- that mismatch made
+    # the baseline always too low, so every run re-displayed old, already-seen log content as
+    # if it were fresh, masking what the run actually did.
     $lastLineCount = 0
     if (Test-Path -LiteralPath $logPath) {
-        $lastLineCount = (Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
+        $lastLineCount = @(Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue).Count
     }
 
+    # BUG (confirmed 2026-09-29): the pre-refactor code called `& $HermesCmd update @updateArgs`
+    # -- "update" as a literal positional argument. Moving this into a function dropped it: every
+    # run here was actually invoking bare `hermes` (no args) instead of `hermes update`, which
+    # launches the interactive TUI chat. That crashes instantly inside Start-Job's console-less
+    # environment (prompt_toolkit: NoConsoleScreenBufferError), producing an immediate, silent
+    # (this script's non-retryable-failure path never printed $text) exit 1 -- indistinguishable
+    # from an update failure without capturing $text by hand outside the script, which is how this
+    # was actually found. "update" MUST be hardcoded here, never folded into $UpdateArgs.
     $job = Start-Job -ScriptBlock {
         param($cmd, $cmdArgs)
-        $out = & $cmd @cmdArgs 2>&1
+        $out = & $cmd update @cmdArgs 2>&1
         [pscustomobject]@{ Output = ($out | Out-String); ExitCode = $LASTEXITCODE }
     } -ArgumentList $HermesCmd, $UpdateArgs
 
@@ -390,6 +417,8 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         if ($text -match [regex]::Escape($ConcurrentUpdatePattern)) {
             Write-Host ""
             Write-Warning ("Still locked by another update after {0:N1} minute(s). Not killing it -- check 'hermes logs' and any open Desktop/dashboard window for a stuck updater, then re-run this script." -f ($ConcurrentUpdateMaxWaitSeconds / 60))
+            Write-Host "--- raw hermes update output ---" -ForegroundColor DarkGray
+            Write-Host $text
             exit $updateExitCode
         }
         # A different error surfaced after the wait -- fall through to the normal
@@ -405,6 +434,14 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         Write-Host ""
         Write-Warning "hermes update exited with code $updateExitCode (not the known gateway-discovery race -- not retrying)."
         Write-Host "No further automatic action taken. Investigate before re-running." -ForegroundColor Yellow
+        # Always show the raw captured output before giving up -- confirmed 2026-09-29: a real bug
+        # (the "update" subcommand silently dropped from the Start-Job call) produced exactly this
+        # exit path with genuinely useful diagnostic text (a full crash traceback) sitting in $text
+        # the whole time, invisible because nothing here ever printed it. Don't repeat that.
+        if ($text) {
+            Write-Host "--- raw hermes update output ---" -ForegroundColor DarkGray
+            Write-Host $text
+        }
         exit $updateExitCode
     }
 
@@ -418,6 +455,10 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         Write-Host "Try again shortly, or file this against hermes-agent citing:"
         Write-Host "  gateway/status.py: _is_gateway_runtime_lock_active_strict (~line 1141)"
         Write-Host "  hermes_cli/gateway.py: find_profile_gateway_processes (~line 776)"
+        if ($text) {
+            Write-Host "--- raw hermes update output ---" -ForegroundColor DarkGray
+            Write-Host $text
+        }
         exit $updateExitCode
     }
 
@@ -511,9 +552,17 @@ else {
         else {
             $HermesAgentDir = Join-Path $HermesHome "hermes-agent"
             Push-Location $HermesAgentDir
+            # catch, not just try/finally: uv commonly writes resolver/progress lines to stderr
+            # even on a clean success, which risks the same terminating-error escalation fixed in
+            # Test-McpPythonPackage above. A caught exception here counts as a failed reinstall
+            # (falls through to the existing "Failed to reinstall" warning), not a script crash.
+            $reinstallExit = 1
             try {
                 & $UvExe pip install -e ".[mcp]" --python $PythonExe
                 $reinstallExit = $LASTEXITCODE
+            }
+            catch {
+                Write-Warning "  'uv pip install' raised an error: $($_.Exception.Message)"
             }
             finally {
                 Pop-Location
