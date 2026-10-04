@@ -119,8 +119,10 @@ work) are not part of that set and get silently stranded after an update or fres
   flow actually authenticates — whoever completes the code in the browser picks the account;
   always verify with `olk auth status --account <email>` afterward, don't trust the flag.
   Write/destructive tools (`mail_move`, `mail_delete`) are opt-in via
-  `--allow-write=mail_move --allow-destructive=mail_delete` on re-registration, and still gated by
-  Hermes's own per-call approval (`approvals.mode: manual`) since neither is `readOnlyHint: true`.
+  `--allow-write=mail_move --allow-destructive=mail_delete` on re-registration. **Not** gated by
+  Hermes's approval prompt: `tools/mcp_tool.py` only gates non-`readOnlyHint` MCP calls on servers
+  registered with `trust: untrusted`; with no `trust:` key (the setup here) they run unprompted,
+  cron included (confirmed 2026-10-04). Code-level checks are the only real guard.
 - **olk-bulk** (`olk-bulk-mcp.py`, this repo) — `olk`'s move/delete only ever act on one message ID;
   this wraps repeated `olk mail search` + `move`/`delete` behind `bulk_move_messages` /
   `bulk_delete_messages` (KQL query → acts on every match, `dry_run` default, `top` capped at 200).
@@ -132,6 +134,13 @@ work) are not part of that set and get silently stranded after an update or fres
   content (curly quotes, emoji). Registered with an **absolute, version-pinned** path to the bundled
   interpreter (`hermes mcp add --command` stores it verbatim, never re-resolves) — `05-update-hermes.ps1`
   detects and repoints this automatically if a Hermes update bumps the Python version.
+  Also hosts the email-cleanup **sender policy** loop (`sender_engagement_report`,
+  `record_sender_decision`, `cleanup_approved_senders`; policy JSON in the
+  `email-cleanup-at-scale` skill's `assets/`). Cleanup queries are built in code because an LLM-written
+  query (`receivedDateTime:<...`, invalid KQL) silently matched 0 and a cron run falsely reported
+  "0 found". Two Graph facts behind the design: `mail search` returns at most 275 results however
+  large `-n` is, and an invalid KQL property returns 0 rather than an error; `mail list` pages 1000 at
+  a time and is what full-inbox scans use. Adding/changing tools here needs a gateway restart.
 
 ## Model routing
 
