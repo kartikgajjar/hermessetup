@@ -84,7 +84,7 @@ $StateFiles = @(
 )
 $StateDatabases = @("state.db", "kanban.db", "projects.db", "shared-state.db")
 $StateDirs = @(
-    "memories", "skills", "sessions",
+    "memories", "skills", "sessions", "sandboxes",
     "cron", "pairing", "platforms", "plugins", "desktop-plugins",
     "plugin-update-checks", "gateway-service", "kanban"
 )

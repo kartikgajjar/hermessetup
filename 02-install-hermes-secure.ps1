@@ -150,8 +150,19 @@ function Set-HermesConfig {
     }
 }
 
-# Docker terminal sandbox: no host mounts, no network, no persistence,
-# no env forwarding, disposable per-session containers.
+# Docker terminal sandbox: no host mounts, no network, no env forwarding.
+#
+# container_persistent: true -- deliberately NOT per-session disposable.
+# Traced 2026-10-04 (tools\terminal_tool.py _resolve_container_task_id,
+# tools\environments\docker.py _mount_args): with false, every gateway
+# message/session gets its own container whose /root and /workspace are
+# tmpfs, so anything a Discord session writes (reports, CSVs) is gone when
+# that container is reaped and no other session -- CLI or a later Discord
+# message -- can see it. With true, CLI and default-profile gateway sessions
+# share ONE container, and /root + /workspace are bind-mounted from
+# $HermesHome\sandboxes\docker\default\{home,workspace}, so working files
+# survive restarts and are visible across Discord and CLI. Still no host
+# mounts beyond that Hermes-owned dir; 03/04 back it up as state.
 $HardenedSettings = [ordered]@{
     "terminal.backend"                       = "docker"
     "terminal.cwd"                            = "/workspace"
@@ -162,7 +173,7 @@ $HardenedSettings = [ordered]@{
     "terminal.docker_env"                     = "{}"
     "terminal.docker_extra_args"              = "[]"
     "terminal.docker_network"                 = "false"
-    "terminal.container_persistent"           = "false"
+    "terminal.container_persistent"           = "true"
     "terminal.container_cpu"                  = "2"
     "terminal.container_memory"               = "4096"
     "terminal.timeout"                        = "180"

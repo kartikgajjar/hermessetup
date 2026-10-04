@@ -83,7 +83,7 @@ $StateFiles = @(
 )
 $StateDatabases = @("state.db", "kanban.db", "projects.db", "shared-state.db")
 $StateDirs = @(
-    "memories", "skills", "sessions",
+    "memories", "skills", "sessions", "sandboxes",
     "cron", "pairing", "platforms", "plugins", "desktop-plugins",
     "plugin-update-checks", "gateway-service", "kanban"
 )
@@ -206,7 +206,7 @@ $HardenedSettings = [ordered]@{
     "terminal.docker_env"                     = "{}"
     "terminal.docker_extra_args"              = "[]"
     "terminal.docker_network"                 = "false"
-    "terminal.container_persistent"           = "false"
+    "terminal.container_persistent"           = "true"
     "terminal.container_cpu"                  = "2"
     "terminal.container_memory"               = "4096"
     "terminal.timeout"                        = "180"
