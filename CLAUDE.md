@@ -32,6 +32,40 @@ their face.
 behind (below). `.\06-reap-hermes-containers.ps1 -Install` is a one-time setup step (registers a
 scheduled task); you don't run it repeatedly.
 
+## Verifying changes (there is no test suite)
+
+These scripts mutate the real, live Hermes install — there's no sandbox copy. Safe checks, in order:
+
+```powershell
+# Parse-only syntax check (no execution)
+$null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD\05-update-hermes.ps1", [ref]$null, [ref]$errs); $errs
+
+.\05-update-hermes.ps1 -Plan     # read-only: runs `hermes update --plan` once, no mutation
+.\06-reap-hermes-containers.ps1  # a single sweep; -Now reaps all idle containers immediately
+python -m py_compile olk-bulk-mcp.py
+```
+
+`olk-bulk`'s tools default to `dry_run=true` — exercise them that way first. Destructive scripts
+(`01` cleanup, `02` install, `04` restore) have no dry-run mode; don't run them just to "test" an
+edit without the user's go-ahead.
+
+## Script conventions
+
+- Every script starts with `#requires -Version 5.1` and comment-based help (`.SYNOPSIS` /
+  `.DESCRIPTION` / `.PARAMETER`). The `.DESCRIPTION` blocks are where root-cause traces live — dated,
+  with file/function/line references into Hermes's own source at `%LOCALAPPDATA%\hermes\hermes-agent`.
+  When a fix is based on reading Hermes source, record the trace there the same way.
+- Wrap Hermes as a black box: drive it through the `hermes` CLI (`hermes config set` one key at a
+  time in `02`, never overwriting `config.yaml` wholesale) and never patch Hermes's Python source —
+  the next `hermes update` overwrites it.
+- `05-update-hermes.ps1` has a documented invariant: it **never calls `Stop-Process` and never
+  deletes/moves any Hermes file** (e.g. `gateway.lock`, `.hermes-update-in-progress`). It handles
+  two upstream failures by waiting/retrying instead: a transient `gateway.lock` sharing-violation
+  race in Hermes's gateway discovery (bounded retry), and exit code 2 (another update holds the
+  update lock — Hermes's own `update_lock.py` self-heals stale markers after 20 min, so wait, don't
+  kill). Adding the leftover-`python.exe` pre-flight described below means deliberately breaking
+  this invariant — confirm with the user and update the header's statement if you do.
+
 ## Gotchas confirmed by direct investigation (not guesses)
 
 **Before running `hermes update`, check for leftover `python.exe` processes.** The real root cause
@@ -155,6 +189,27 @@ platform pairings, plugins — deliberately excluding `tools\`, `installs\`, `no
 Not covered at all, and not a gap: `olk`'s own OAuth credentials live in **Windows Credential
 Manager** (confirmed — no token file exists anywhere under its config dir, just metadata), entirely
 outside Hermes's state and untouched by any Hermes reinstall/backup/restore cycle.
+
+## Sandbox persistence: `terminal.container_persistent: true` is deliberate
+
+With `false`, every gateway message/session gets its own container with tmpfs `/root` and
+`/workspace` — files a Discord session writes (e.g. "saved to /root/report.csv") vanish when the
+container is reaped, and no other session can see them. With `true` (set by `02`/`04`), CLI and
+default-profile gateway sessions share ONE container whose `/root` and `/workspace` are bind-mounted
+from `%LOCALAPPDATA%\hermes\sandboxes\docker\default\{home,workspace}` (traced in
+`tools\terminal_tool.py` `_resolve_container_task_id` and `tools\environments\docker.py`
+`_mount_args`). `sandboxes\` is therefore in `03`/`04`'s `$StateDirs`. `06`'s reaper may still
+remove the idle shared container — harmless, the bind-mounted files survive and Hermes recreates it.
+Discord's conversational memory (`memory`, `session_search` toolsets) is separate and was already
+enabled in `platform_toolsets.discord`.
+
+Data a skill depends on (e.g. `email-culprit-database`'s CSV) belongs in the skill's own
+`assets/`/`references/` dir under `%LOCALAPPDATA%\hermes\skills\`, not in `/root`. Skills are
+bind-mounted **read-only** into the container (`/root/.hermes/skills`), so the agent can't write
+there from the terminal — it must use `skill_manage(action='write_file', ...)`, which runs on the
+host. A file a skill merely *describes* but that was only ever written inside a container is how
+that CSV got lost. Every past tool call is stored in `state.db` (`messages.tool_calls`), which is
+how it was recovered.
 
 ## Gateway restart needed after config changes — except when it isn't
 
