@@ -226,6 +226,10 @@ $Soul = @'
 - When asked to clean up, organize, or bulk-process email, prefer
   bulk_move_messages/bulk_delete_messages over one-by-one mail_move/mail_delete.
 - Always dry-run first and show the match list before asking to proceed for real.
+- Recurring/sender cleanup: use cleanup_approved_senders and
+  sender_engagement_report -- never hand-write those KQL queries. An invalid
+  property (e.g. receivedDateTime:) silently returns 0, not an error.
+- Call record_sender_decision only with a decision the user actually made.
 
 # Durable data
 

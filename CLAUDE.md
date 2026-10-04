@@ -193,7 +193,14 @@ platform pairings, plugins — deliberately excluding `tools\`, `installs\`, `no
 `05-update-hermes.ps1` rather than needing manual fixing after a restore:
 1. The `mcp` Python extra (see above) isn't state — a fresh install/restore won't have it.
 2. `olk-bulk`'s pinned interpreter path (see above) can go stale across a reinstall that lands on a
-   different Python version.
+   different Python version. `05` repoints it and then runs `hermes gateway restart`, since the
+   repoint is otherwise inert until the next restart.
+
+`04` re-applies `02`'s hardening keys over the restored `config.yaml` — **except `mcp_servers = {}`**,
+which until 2026-10-04 it also re-applied, wiping every restored MCP server (and with them the
+weekly email-cleanup cron's tools). Keep `02`'s and `04`'s hardening lists otherwise identical.
+The email-cleanup sender policy (`skills\productivity\email-cleanup-at-scale\assets\sender-policy.json`)
+and the cron job ride along in `skills\` and `cron\`.
 
 Not covered at all, and not a gap: `olk`'s own OAuth credentials live in **Windows Credential
 Manager** (confirmed — no token file exists anywhere under its config dir, just metadata), entirely
@@ -224,8 +231,11 @@ by `02`, restored by `04`) — keep the live file and `02`'s template in sync wh
 ## Gateway restart needed after config changes — except when it isn't
 
 Most `config.yaml` changes (MCP server registration/changes, `model.default`) are read once at
-gateway-process-start and need `wscript.exe gateway-service\Hermes_Gateway.vbs` (restart) or
-`/reload-mcp` (MCP only, in an open session) to take effect. `SOUL.md` is the exception — confirmed
+gateway-process-start and need `hermes gateway restart` (graceful drain + respawn; confirmed
+2026-10-04) or `/reload-mcp` (MCP only, in an open session) to take effect. Same for edits to
+`olk-bulk-mcp.py` itself. `wscript.exe gateway-service\Hermes_Gateway.vbs` is a *start*, not a
+restart — with a gateway already running it exits silently and the old process (and its MCP
+children) keeps serving; only use it when the gateway is stopped (after `03`, in `04`). `SOUL.md` is the exception — confirmed
 via `agent/prompt_builder.py`'s `load_soul_md()`: no caching, read fresh on every turn's system
 prompt build. Don't restart the gateway just for a SOUL.md edit; do restart for anything in
 `config.yaml`.

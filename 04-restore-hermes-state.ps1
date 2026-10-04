@@ -15,10 +15,12 @@
     installs\, or cache\.
 
     After restoring config.yaml (which may be an older copy, or one you'd
-    since hand-edited), the terminal/approvals/MCP hardening is re-applied
+    since hand-edited), the terminal/approvals hardening is re-applied
     via `hermes config set` -- the same verified keys 02-install-hermes-secure.ps1
     uses -- so the restored config can never silently carry forward weaker
-    settings than this machine's installed Hermes version supports.
+    settings than this machine's installed Hermes version supports. The one
+    02 key deliberately NOT re-applied is `mcp_servers = {}`: the restored MCP
+    server registrations are state to keep, not a setting to reset.
 
     Credentials (auth.json, .env) ARE restored as of 2026-09-27 -- the
     backup now includes them by explicit decision, since this pair of
@@ -219,13 +221,17 @@ $HardenedSettings = [ordered]@{
     "approvals.mcp_reload_confirm"            = "true"
     "approvals.destructive_slash_confirm"     = "true"
     "command_allowlist"                       = "[]"
-    "mcp_servers"                             = "{}"
+    # NOT "mcp_servers" = "{}" (unlike 02): that's a fresh-install default, but here it would
+    # wipe the MCP servers config.yaml was just restored with (olk, olk-bulk, expertassist),
+    # silently breaking every MCP-backed skill and the weekly email-cleanup cron job, which
+    # calls olk-bulk's tools (found 2026-10-04). MCP servers are restored state, not a
+    # hardening setting -- 05-update-hermes.ps1 re-verifies them after updates.
 }
 
 foreach ($key in $HardenedSettings.Keys) {
     Set-HermesConfig -Key $key -Value $HardenedSettings[$key]
 }
-Write-Host "  Hardened terminal/approvals/MCP settings re-applied."
+Write-Host "  Hardened terminal/approvals settings re-applied (restored MCP servers kept)."
 
 # ---------------------------------------------------------------------------
 # 4. Pre-install optional per-platform packages (discord.py, etc.).

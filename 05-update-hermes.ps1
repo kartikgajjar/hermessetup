@@ -600,6 +600,23 @@ else {
             & $HermesCmd config set --force mcp_servers.olk-bulk.command $PythonExe | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "  Repointed 'olk-bulk' to the current bundled interpreter." -ForegroundColor Green
+                # The update already restarted the gateway, which spawned olk-bulk from the OLD
+                # (now nonexistent) path; config.yaml is only read at gateway start, so the repoint
+                # does nothing until the next restart -- the weekly email-cleanup cron would fail
+                # first. `hermes gateway restart` is Hermes's own graceful drain/restart (verified
+                # 2026-10-04: "drained cleanly", Discord reconnected), not a Stop-Process, so the
+                # no-kill invariant in this script's header still holds. Do NOT use
+                # Hermes_Gateway.vbs for this: it only starts a gateway and exits immediately if
+                # one is already running.
+                try {
+                    & $HermesCmd gateway restart
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "  'hermes gateway restart' exited $LASTEXITCODE -- restart it manually so olk-bulk loads from the new path."
+                    }
+                }
+                catch {
+                    Write-Warning "  'hermes gateway restart' raised an error: $($_.Exception.Message) -- restart it manually."
+                }
             }
             else {
                 Write-Warning "  Failed to repoint 'olk-bulk' (exit $LASTEXITCODE). Fix manually:`n    hermes config set --force mcp_servers.olk-bulk.command `"$PythonExe`""

@@ -204,5 +204,8 @@ Write-Host "  gateway.pid, gateway.lock, gateway_state.json, gateway-starts.log,
 Write-Host "NOT included (currently empty on this machine -- add to `$StateDirs if this changes):" -ForegroundColor Yellow
 Write-Host "  attachments\, images\, image_cache\, audio_cache\"
 Write-Host ""
-Write-Host "Hermes was stopped for this backup. Start it again normally (e.g. 'hermes chat')."
+Write-Host "Hermes was stopped for this backup -- including the gateway, so Discord and cron" `
+    "jobs (e.g. the weekly email cleanup) are down until it is started again:"
+Write-Host "  wscript.exe `"$HermesHome\gateway-service\Hermes_Gateway.vbs`""
+Write-Host "(or skip this if you're about to run 01 -> 02 -> 04, which starts it for you)."
 Write-Host ""

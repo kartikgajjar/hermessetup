@@ -86,10 +86,12 @@ hermes mcp add olk --command olk --args mcp --account ekartka@hotmail.com \
 (re-adding an existing server name prompts `Overwrite? [y/N]` before the usual
 `Enable all N tools?` prompt — pipe two `y`s if scripting this non-interactively, or
 just answer both interactively.) `mail_delete` is Graph's standard delete (moves to
-Deleted Items, not a hard purge). Hermes's own approval gate
-(`tools/mcp_tool.py`: a tool call needs manual approval unless its `readOnlyHint`
-annotation is exactly `True` at discovery) still requires per-call approval under
-`approvals.mode: manual` for both — enabling them here doesn't bypass that.
+Deleted Items, not a hard purge). **These are NOT approval-gated by Hermes** (corrected
+2026-10-04): `tools/mcp_tool.py` only asks for approval on non-`readOnlyHint` MCP calls when
+the server is registered with `trust: untrusted`. With no `trust:` key — the registration
+above — the server is trusted and write/destructive calls run without a prompt, cron
+included. Setting `trust: untrusted` would gate them, but under `approvals.cron_mode: deny`
+it would also block the weekly email-cleanup cron job.
 
 ## Bulk move/delete: `olk mail move`/`mail delete` are single-message only
 
@@ -105,8 +107,18 @@ hermes mcp add olk-bulk --command "<hermes>\tools\python-<version>\python.exe" \
 ```
 
 Both tools default to `dry_run=true` (report matches without acting) and cap `top` at
-200 per call, on top of the same manual-approval gate as above — two independent
-safety layers before anything actually moves or deletes.
+200 per call. Those are the only safety layers — there is no Hermes approval prompt (see
+above).
+
+It also hosts the email-cleanup **sender policy** tools (2026-10-04):
+`sender_engagement_report` (read-only; scores senders by unread share via `olk mail list`
+paging), `record_sender_decision` (stores the user's verdict in the
+`email-cleanup-at-scale` skill's `assets/sender-policy.json`), and
+`cleanup_approved_senders` (deletes only for approved senders; queries built in code).
+The weekly cron job `a94d8278b4a4` calls the last two. Two Graph search facts behind that
+design: `olk mail search` returns at most 275 results however large `-n` is, and an invalid
+KQL property (e.g. `receivedDateTime:<date`) returns 0 rather than an error — which is how a
+cron run once reported "0 found" while 417+ messages matched.
 
 **Gotcha 4: the interpreter path is pinned, not resolved.** `hermes mcp add
 --command` stores whatever path you give it verbatim in `config.yaml` — it's never
