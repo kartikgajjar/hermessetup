@@ -209,7 +209,8 @@ bind-mounted **read-only** into the container (`/root/.hermes/skills`), so the a
 there from the terminal — it must use `skill_manage(action='write_file', ...)`, which runs on the
 host. A file a skill merely *describes* but that was only ever written inside a container is how
 that CSV got lost. Every past tool call is stored in `state.db` (`messages.tool_calls`), which is
-how it was recovered.
+how it was recovered. The agent is held to this by the "Durable data" section of `SOUL.md` (written
+by `02`, restored by `04`) — keep the live file and `02`'s template in sync when editing either.
 
 ## Gateway restart needed after config changes — except when it isn't
 

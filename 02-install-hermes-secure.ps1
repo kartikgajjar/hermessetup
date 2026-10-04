@@ -220,6 +220,24 @@ $Soul = @'
 - Send only the minimum information required externally.
 - Never store secrets or confidential data in Memory or Skills.
 - Do not broaden filesystem, network, or tool permissions for convenience.
+
+# Email
+
+- When asked to clean up, organize, or bulk-process email, prefer
+  bulk_move_messages/bulk_delete_messages over one-by-one mail_move/mail_delete.
+- Always dry-run first and show the match list before asking to proceed for real.
+
+# Durable data
+
+- Terminal sandbox files (/root, /workspace) are scratch. Anything a skill or
+  recurring task depends on (sender lists, CSVs, templates) must be saved in
+  that skill: skill_manage(action='write_file', file_path='assets/<file>'),
+  and its SKILL.md must name the file's path. Skills are read-only at
+  /root/.hermes/skills/<category>/<skill>/ -- read them there.
+- No fitting skill? Create one with skill_manage first, then save the data.
+- Memory entries about saved data must cite the skill and path.
+- Read a data file before quoting its contents or counts. If it is missing,
+  say so and stop -- never recreate it or pad it with guessed entries.
 '@
 
 Set-Content -Path $SoulPath -Value $Soul -Encoding UTF8
