@@ -238,6 +238,8 @@ $Soul = @'
 - Memory entries about saved data must cite the skill and path.
 - Read a data file before quoting its contents or counts. If it is missing,
   say so and stop -- never recreate it or pad it with guessed entries.
+- read_file output prefixes each line with "N|" -- strip those before writing
+  a file back, or the saved file is corrupted. Verify by re-reading after a write.
 '@
 
 Set-Content -Path $SoulPath -Value $Soul -Encoding UTF8
