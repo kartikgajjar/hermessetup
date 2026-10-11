@@ -58,7 +58,12 @@ class BrowserSession:
                 ["--window-position=-32000,-32000"]
                 if self.offscreen
                 else ["--window-position=60,40", "--window-size=1280,860"]
-            )
+            ) + [
+                # Patchright itself adds --disable-blink-features=AutomationControlled (that is
+                # what hides navigator.webdriver), and Chrome nags about it with an "unsupported
+                # command-line flag" infobar. --test-type hides that infobar without removing the flag.
+                "--test-type",
+            ]
         return opts
 
     async def start(self) -> None:
@@ -70,7 +75,9 @@ class BrowserSession:
                     **self._options(self.channel)
                 )
             except Exception as exc:
-                if not self.channel:
+                # Only a missing Chrome justifies the bundled-Chromium fallback. Anything else
+                # (profile in use, bad args) would just fail again, with a more confusing message.
+                if not self.channel or "doesn't exist" not in str(exc) and "not found" not in str(exc).lower():
                     raise
                 # Real Chrome not installed: fall back to patchright's bundled Chromium.
                 logger.warning("channel %r unavailable (%s); using bundled chromium", self.channel, exc)
