@@ -33,11 +33,17 @@ async def _login(site: str, account: str) -> int:
         try:
             page = session.page
             await page.goto(adapter.login_url, wait_until="domcontentloaded")
-            print(
-                f"\nLog in to {site} as '{account}' in the browser window (2FA/captcha are fine).\n"
-                "This finishes by itself once the site looks logged in, or press Enter here when\n"
-                f"you are logged in. Timeout: {adapter.login_timeout // 60} min.\n"
-            )
+            if adapter.login_confirm:
+                how = "When you can see your account pages, press Enter HERE to save the session."
+            else:
+                how = (
+                    "This finishes by itself once the site looks logged in, "
+                    "or press Enter here when you are logged in."
+                )
+            print()
+            print(f"Log in to {site} as '{account}' in the browser window (2FA/captcha are fine).")
+            print(f"{how} Timeout: {adapter.login_timeout // 60} min.")
+            print()
             # Daemon thread, not asyncio.to_thread: an executor thread stuck in readline() blocks
             # interpreter exit until another Enter arrives.
             loop = asyncio.get_running_loop()
@@ -58,7 +64,11 @@ async def _login(site: str, account: str) -> int:
                     ok = True
                     break
                 try:
-                    if not adapter.url_needs_login(page.url) and await adapter.is_logged_in(page):
+                    if (
+                        not adapter.login_confirm
+                        and not adapter.url_needs_login(page.url)
+                        and await adapter.is_logged_in(page)
+                    ):
                         await asyncio.sleep(3)  # let the session cookies settle
                         ok = True
                         break
@@ -69,6 +79,7 @@ async def _login(site: str, account: str) -> int:
                 print("Timed out waiting for login.")
                 return 1
             profiles.update_meta(site, account, last_login=profiles.utcnow())
+            print(f"Saved at: {page.url}")
             print(f"Saved session for {site}/{account} under {config.profile_dir(site, account)}")
             return 0
         finally:
