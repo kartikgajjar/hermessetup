@@ -11,6 +11,7 @@ low (a handful of scrolls, occasionally) and use only your own account.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Annotated
 
@@ -28,26 +29,33 @@ _REEL_HREF = r"facebook\.com/reel/\d+"
 _REEL_URL = re.compile(r"^https://(www\.|m\.)?facebook\.com/reel/(\d+)(/|\?|$)")
 
 
+log = logging.getLogger("webmcp.facebook")
 _SEE_MORE = re.compile(r"see more", re.I)
 
 
 async def _expand_caption(page: Page) -> None:
-    """Click the caption's "... See more" so the full text is in the DOM.
+    """Click the caption's "... See more" until it is really expanded.
 
-    The button renders after domcontentloaded, so poll for it (up to ~5 s) instead of checking once;
-    a single immediate check races the page and silently leaves the caption truncated.
+    The button renders after domcontentloaded and may exist before its click handler is attached,
+    so a single early click can be a no-op. Keep clicking and only stop once the button is gone
+    after a click (or ~8 s have passed).
     """
-    for _ in range(10):
+    clicked = False
+    for i in range(16):
         try:
             target = page.get_by_role("button", name=_SEE_MORE)
             if await target.count() == 0:
                 target = page.get_by_text(re.compile(r"^\W*see more$", re.I))
-            if await target.count():
+            n = await target.count()
+            if n:
                 await target.first.click(timeout=3000)
-                await page.wait_for_timeout(800)
+                clicked = True
+                await page.wait_for_timeout(700)
+                continue  # re-check: gone = expanded, still there = click was a no-op
+            if clicked:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("see-more poll %d failed: %s", i, str(exc)[:200])
         await page.wait_for_timeout(500)
 
 
