@@ -241,6 +241,15 @@ $Soul = @'
   property (e.g. receivedDateTime:) silently returns 0, not an error.
 - Call record_sender_decision only with a decision the user actually made.
 
+# Web sessions (webmcp)
+
+- Tools for logged-in sites (facebook_*, tipranks_*, web_read) take an account label.
+  Call webmcp_accounts first to see the labels, then ALWAYS pass account= explicitly,
+  even when a site has only one login.
+- If several accounts fit the request and the user did not say which, ask -- never guess.
+- Read-only use, on explicit request. A "session expired" / "bot check" error means the
+  user must act (webmcp --login <site> --account <label>); do not retry in a loop.
+
 # Durable data
 
 - Terminal sandbox files (/root, /workspace) are scratch. Anything a skill or

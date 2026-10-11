@@ -145,6 +145,12 @@ work) are not part of that set and get silently stranded after an update or fres
   "0 found". Two Graph facts behind the design: `mail search` returns at most 275 results however
   large `-n` is, and an invalid KQL property returns 0 rather than an error; `mail list` pages 1000 at
   a time and is what full-inbox scans use. Adding/changing tools here needs a gateway restart.
+- **webmcp** (`webmcp/`, this repo — own `pyproject.toml`, run via `uv run --project`) — generic
+  multi-site, multi-account browser-session MCP generalising the LinkedIn pattern; sites are plugins in
+  `webmcp/src/webmcp/sites/` (now `tipranks`, `etrade`, read-only). Identity is `(site, account)`, one
+  patchright profile per account under `%USERPROFILE%\.webmcp\`. TipRanks/E*Trade adapters are
+  **uncalibrated** (written with no logged-in session) — run `webmcp --probe` after first login. Registered
+  2026-10-11 as `webmcp --sites facebook,tipranks` (accounts `fb_kartik`, `tiprank_kartik`, both calibrated); `etrade` is not registered yet. TipRanks sits behind Cloudflare, which refuses headless Chrome — its adapter sets `headless = False` and runs a headed window parked off-screen. See `webmcp/README.md`, `notes-mcp-webmcp.md`.
 
 ## Model routing
 

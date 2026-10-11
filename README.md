@@ -41,6 +41,12 @@ generated reports there.
 - A mount change only applies to a *new* container. After changing it by hand, remove the running
   one (`docker rm -f hermes-<id>`; safe — working files are bind-mounted from the host).
 
+## webmcp (optional): browser-session MCP for TipRanks, E*Trade, ...
+
+`webmcp/` is a self-contained MCP server that reuses the LinkedIn-MCP idea (persistent, hand-logged-in
+browser profile + read-only page-text tools) for many sites, with several logins per site. See
+`webmcp/README.md` and `notes-mcp-webmcp.md`.
+
 ## Discord Gateway Setup
 
 Discord isn't configured by default on a new install. To enable it:
