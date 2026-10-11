@@ -18,7 +18,7 @@ from patchright.async_api import Page
 from pydantic import Field
 
 from .. import extract
-from ..errors import WebmcpError
+from ..errors import RateLimited, WebmcpError
 from .base import SiteAdapter
 
 Account = Annotated[str | None, Field(description="Account label; optional if only one is logged in")]
@@ -26,6 +26,22 @@ Account = Annotated[str | None, Field(description="Account label; optional if on
 _SAVED_URL = "https://www.facebook.com/saved/"
 _REEL_HREF = r"facebook\.com/reel/\d+"
 _REEL_URL = re.compile(r"^https://(www\.|m\.)?facebook\.com/reel/(\d+)(/|\?|$)")
+
+
+_SEE_MORE = re.compile(r"see more", re.I)
+
+
+async def _expand_caption(page: Page) -> None:
+    """Click the caption's "... See more" so the full text is in the DOM. Best effort."""
+    try:
+        target = page.get_by_role("button", name=_SEE_MORE)
+        if await target.count() == 0:
+            target = page.get_by_text(re.compile(r"^\W*see more$", re.I))
+        if await target.count():
+            await target.first.click(timeout=3000)
+            await page.wait_for_timeout(800)
+    except Exception:
+        pass  # caption may already be complete; fall back to whatever text is there
 
 
 class Facebook(SiteAdapter):
@@ -70,7 +86,7 @@ class Facebook(SiteAdapter):
                         if m and m.group(2) not in ids:
                             ids.add(m.group(2))
                             reels.append({"id": m.group(2), "url": f"https://www.facebook.com/reel/{m.group(2)}",
-                                          "card_text": item["text"][:600]})
+                                          "card_text": item["text"][:4000]})
                     return {"count": len(reels), "reels": reels}
 
                 return await svc.run("facebook", account, work)
@@ -84,7 +100,18 @@ class Facebook(SiteAdapter):
                 """Caption, author and visible text of one reel page."""
                 if not _REEL_URL.match(url):
                     raise WebmcpError("url must look like https://www.facebook.com/reel/<digits>")
-                return await svc.read("facebook", account, url, scrolls=1)
+
+                async def work(page: Page) -> dict:
+                    await extract.goto(page, url, wait_selector=self.main_selector)
+                    await _expand_caption(page)
+                    text = await extract.body_text(page, self.main_selector)
+                    if len(text) < self.min_chars:
+                        raise RateLimited(f"{page.url} returned only {len(text)} characters")
+                    return {"url": page.url, "title": await page.title(), "text": text}
+
+                svc_adapter_hosts = self.hosts
+                extract.require_host(url, svc_adapter_hosts)
+                return await svc.run("facebook", account, work)
 
 
 ADAPTER = Facebook()

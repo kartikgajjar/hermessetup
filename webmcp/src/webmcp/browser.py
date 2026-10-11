@@ -77,7 +77,9 @@ class BrowserSession:
             except Exception as exc:
                 # Only a missing Chrome justifies the bundled-Chromium fallback. Anything else
                 # (profile in use, bad args) would just fail again, with a more confusing message.
-                if not self.channel or "doesn't exist" not in str(exc) and "not found" not in str(exc).lower():
+                if not self.channel or not any(
+                    m in str(exc) for m in ("distribution", "Executable doesn't exist")
+                ):
                     raise
                 # Real Chrome not installed: fall back to patchright's bundled Chromium.
                 logger.warning("channel %r unavailable (%s); using bundled chromium", self.channel, exc)
