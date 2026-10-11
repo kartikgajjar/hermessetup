@@ -258,9 +258,13 @@ $Soul = @'
 # Reports and exports
 
 - Save generated reports/exports (HTML briefings, CSVs for the user) to /output --
-  a folder on the user's Windows machine. Name files with the date and tell the user the
-  filename. /root and /workspace remain scratch.
+  a folder on the user's Windows machine. Name files with the date. /root and /workspace
+  remain scratch.
+- /output is {OUTPUT_DIR} on the user's Windows machine. When you tell the user where a
+  file is, give the WINDOWS path ({OUTPUT_DIR}\<filename>), never /output/... or /root/...
+  -- the user's app opens files from the Windows side and cannot resolve container paths.
 '@
+$Soul = $Soul.Replace('{OUTPUT_DIR}', $OutputDir)
 
 Set-Content -Path $SoulPath -Value $Soul -Encoding UTF8
 Write-Host "  $SoulPath"
