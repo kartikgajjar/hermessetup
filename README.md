@@ -22,7 +22,24 @@ cd hermessetup
 ```
 
 This installs Hermes Agent fresh via the official installer and applies a
-hardened, Docker-sandboxed, manual-approval baseline config automatically.
+hardened, Docker-sandboxed, manual-approval baseline config automatically,
+and creates the `/output` folder the agent saves reports to (see below).
+
+## Agent output folder (`/output`)
+
+The Docker sandbox is isolated, so files the agent writes inside it (e.g. `/root/report.html`)
+aren't normal Windows paths and can't be opened from the GUI. `02` and `04` therefore create one
+shared folder and mount it into the sandbox as `/output`; `SOUL.md` tells the agent to save
+generated reports there.
+
+- Default location: `%OneDrive%\Documents\Hermes-Output` (so it syncs), or
+  `%USERPROFILE%\Documents\Hermes-Output` if OneDrive isn't present. Override by setting the
+  `HERMES_OUTPUT_DIR` environment variable before running `02`/`04`. The script prints the path it
+  used ("Agent output folder (mounted at /output): ...").
+- It's the only host folder the sandbox can see; nothing else on your PC is exposed.
+- It's deliberately separate from the backup folder (`...\Documents\Hermes`), which `03` rewrites.
+- A mount change only applies to a *new* container. After changing it by hand, remove the running
+  one (`docker rm -f hermes-<id>`; safe — working files are bind-mounted from the host).
 
 ## Discord Gateway Setup
 
@@ -56,7 +73,7 @@ the first time.
 | Script | Purpose |
 |---|---|
 | `01-cleanup-hermes.ps1` | Fully removes Hermes (config, auth, sessions, Docker containers, PATH/env vars). |
-| `02-install-hermes-secure.ps1` | Fresh install via the official installer, with a hardened, Docker-sandboxed, manual-approval baseline applied automatically. |
+| `02-install-hermes-secure.ps1` | Fresh install via the official installer, with a hardened, Docker-sandboxed, manual-approval baseline applied automatically, plus the `/output` report folder. |
 | `03-backup-hermes-state.ps1` | Backs up config, credentials, memories, skills, sessions, cron jobs, platform pairings, plugins, and the autostart shortcut. |
 | `04-restore-hermes-state.ps1` | Restores everything `03` backed up onto a fresh install, reinstalls any optional platform packages (e.g. Discord), and starts the gateway. |
 | `05-update-hermes.ps1` | Runs `hermes update` with a bounded retry around a known Windows gateway-discovery race instead of letting it abort outright. |

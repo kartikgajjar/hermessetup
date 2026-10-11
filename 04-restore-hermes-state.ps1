@@ -198,12 +198,22 @@ function Set-HermesConfig {
     }
 }
 
+# One deliberate host mount: a dedicated output folder at /output, so reports the agent
+# generates (e.g. HTML briefings) land in a real Windows path (OneDrive\Documents\Hermes-Output
+# if OneDrive exists, else Documents\Hermes-Output; override with $env:HERMES_OUTPUT_DIR) and are
+# openable from the GUI. Created here so Docker doesn't create it root-owned. Only this folder --
+# never OneDrive as a whole. Added 2026-10-11; keep 02's and 04's logic identical.
+$OutputBase   = if ($env:OneDrive -and (Test-Path -LiteralPath $env:OneDrive)) { Join-Path $env:OneDrive "Documents" } else { Join-Path $env:USERPROFILE "Documents" }
+$OutputDir    = if ($env:HERMES_OUTPUT_DIR) { $env:HERMES_OUTPUT_DIR } else { Join-Path $OutputBase "Hermes-Output" }
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+$OutputVolume = ($OutputDir -replace '\\', '/') + ":/output"
+Write-Host "  Agent output folder (mounted at /output): $OutputDir"
 $HardenedSettings = [ordered]@{
     "terminal.backend"                       = "docker"
     "terminal.cwd"                            = "/workspace"
     "terminal.docker_image"                   = "nikolaik/python-nodejs:python3.11-nodejs20"
     "terminal.docker_mount_cwd_to_workspace"  = "false"
-    "terminal.docker_volumes"                 = "[]"
+    "terminal.docker_volumes"                 = "[$OutputVolume]"
     "terminal.docker_forward_env"             = "[]"
     "terminal.docker_env"                     = "{}"
     "terminal.docker_extra_args"              = "[]"

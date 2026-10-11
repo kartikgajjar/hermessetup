@@ -150,7 +150,7 @@ function Set-HermesConfig {
     }
 }
 
-# Docker terminal sandbox: no host mounts, no network, no env forwarding.
+# Docker terminal sandbox: no network, no env forwarding, one host mount (/output, below).
 #
 # container_persistent: true -- deliberately NOT per-session disposable.
 # Traced 2026-10-04 (tools\terminal_tool.py _resolve_container_task_id,
@@ -163,12 +163,22 @@ function Set-HermesConfig {
 # $HermesHome\sandboxes\docker\default\{home,workspace}, so working files
 # survive restarts and are visible across Discord and CLI. Still no host
 # mounts beyond that Hermes-owned dir; 03/04 back it up as state.
+# One deliberate host mount: a dedicated output folder at /output, so reports the agent
+# generates (e.g. HTML briefings) land in a real Windows path (OneDrive\Documents\Hermes-Output
+# if OneDrive exists, else Documents\Hermes-Output; override with $env:HERMES_OUTPUT_DIR) and are
+# openable from the GUI. Created here so Docker doesn't create it root-owned. Only this folder --
+# never OneDrive as a whole. Added 2026-10-11; keep 02's and 04's logic identical.
+$OutputBase   = if ($env:OneDrive -and (Test-Path -LiteralPath $env:OneDrive)) { Join-Path $env:OneDrive "Documents" } else { Join-Path $env:USERPROFILE "Documents" }
+$OutputDir    = if ($env:HERMES_OUTPUT_DIR) { $env:HERMES_OUTPUT_DIR } else { Join-Path $OutputBase "Hermes-Output" }
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+$OutputVolume = ($OutputDir -replace '\\', '/') + ":/output"
+Write-Host "  Agent output folder (mounted at /output): $OutputDir"
 $HardenedSettings = [ordered]@{
     "terminal.backend"                       = "docker"
     "terminal.cwd"                            = "/workspace"
     "terminal.docker_image"                   = "nikolaik/python-nodejs:python3.11-nodejs20"
     "terminal.docker_mount_cwd_to_workspace"  = "false"
-    "terminal.docker_volumes"                 = "[]"
+    "terminal.docker_volumes"                 = "[$OutputVolume]"
     "terminal.docker_forward_env"             = "[]"
     "terminal.docker_env"                     = "{}"
     "terminal.docker_extra_args"              = "[]"
@@ -244,6 +254,12 @@ $Soul = @'
   say so and stop -- never recreate it or pad it with guessed entries.
 - read_file output prefixes each line with "N|" -- strip those before writing
   a file back, or the saved file is corrupted. Verify by re-reading after a write.
+
+# Reports and exports
+
+- Save generated reports/exports (HTML briefings, CSVs for the user) to /output --
+  a folder on the user's Windows machine. Name files with the date and tell the user the
+  filename. /root and /workspace remain scratch.
 '@
 
 Set-Content -Path $SoulPath -Value $Soul -Encoding UTF8

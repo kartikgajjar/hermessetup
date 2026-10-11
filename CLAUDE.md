@@ -113,6 +113,10 @@ work) are not part of that set and get silently stranded after an update or fres
 
 - **expertassist** — content-discovery service. Auth gotcha: needs a raw `x-api-key: <key>`
   header, not `Authorization: Bearer <key>` (the client-default olk would guess wrong).
+- **linkedin** — `uvx mcp-server-linkedin@4.27.0` (version-pinned on purpose; `@latest` auto-updates).
+  Browser session saved by `--login` at `%USERPROFILE%\.linkedin-mcp\profile` (outside Hermes state).
+  All 20 tools enabled incl. `send_message`/`connect_with_person`, run unprompted. `hermes mcp add`
+  prompts "Enable all N tools?" — pipe `Y` when scripting. See `notes-mcp-linkedin.md`.
 - **olk** — Outlook (mail/calendar/contacts) via Microsoft Graph, OAuth. `olk mcp` (the MCP-serving
   subcommand) requires a recent build — `go install github.com/rlrghb/olkcli/cmd/olk@latest`.
   `olk auth login --account <email>` does **not** restrict which Microsoft account the device-code
@@ -207,6 +211,17 @@ Manager** (confirmed — no token file exists anywhere under its config dir, jus
 outside Hermes's state and untouched by any Hermes reinstall/backup/restore cycle.
 
 ## Sandbox persistence: `terminal.container_persistent: true` is deliberate
+
+**`/output` is the one deliberate host mount** (added 2026-10-11): `terminal.docker_volumes` maps
+`%OneDrive%\Documents\Hermes-Output` (falls back to `%USERPROFILE%\Documents\Hermes-Output` without
+OneDrive; `$env:HERMES_OUTPUT_DIR` overrides; `02`/`04` create it, since the scripts are shared with
+other people) → `/output` so generated reports land in a real Windows path (container-internal
+`/root/...` links don't open from the GUI, and `/root` isn't synced). Deliberately a *separate* folder from `OneDrive\Documents\Hermes`, which is
+`03`'s backup destination and gets rewritten. `02` and `04` both set it via `$OutputVolume` — keep
+them identical (before this they forced `[]`, which would silently drop the mount). `SOUL.md`
+"Reports and exports" tells the agent to use it. A changed mount only applies to a *new* container:
+`docker rm -f hermes-<id>` the shared one (safe — everything is bind-mounted) after changing it;
+`06 -Now` didn't reap it while it was in use.
 
 With `false`, every gateway message/session gets its own container with tmpfs `/root` and
 `/workspace` — files a Discord session writes (e.g. "saved to /root/report.csv") vanish when the
