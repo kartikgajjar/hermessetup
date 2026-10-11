@@ -29,6 +29,9 @@ class SiteAdapter:
     # Some sites (Cloudflare-fronted ones) reject headless Chrome; those set headless = False and
     # run a real window positioned off-screen instead.
     headless: bool = True
+    # True = --login ends only when you press Enter (multi-step logins such as security codes can
+    # look "logged in" mid-way, and finishing early closes the browser and loses the session).
+    login_confirm: bool = False
     min_chars: int = 200              # shorter innerText than this is treated as a blocked/empty page
 
     def url_needs_login(self, url: str) -> bool:

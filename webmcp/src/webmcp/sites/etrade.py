@@ -36,6 +36,7 @@ class ETrade(SiteAdapter):
     home_url = _PAGES["accounts"]
     auth_url_markers = ("/user/login", "/user/logoff", "/user/timeout", "/login")
     main_selector = "body"
+    login_confirm = True  # security-code steps made auto-detect finish before login completed
     headless = False  # headless Chrome gets ERR_HTTP2_PROTOCOL_ERROR (bot manager); use hidden headed
 
     async def is_logged_in(self, page: Page) -> bool:
