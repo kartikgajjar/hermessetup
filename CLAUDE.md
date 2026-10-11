@@ -260,3 +260,9 @@ children) keeps serving; only use it when the gateway is stopped (after `03`, in
 via `agent/prompt_builder.py`'s `load_soul_md()`: no caching, read fresh on every turn's system
 prompt build. Don't restart the gateway just for a SOUL.md edit; do restart for anything in
 `config.yaml`.
+
+**Open sessions keep their own MCP server processes.** `hermes gateway restart` only respawns the
+gateway's servers; a running desktop/CLI session keeps its old `webmcp` / `olk-bulk` process (Python
+never reloads edited source), so a code change looks like it did nothing there. After editing MCP
+server code, run `/reload-mcp` in each open session (or restart the app). To check, compare the
+server process start times (`Get-CimInstance Win32_Process`, filter on the script name) with the edit.
