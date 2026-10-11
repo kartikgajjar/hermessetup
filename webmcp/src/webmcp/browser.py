@@ -39,7 +39,13 @@ class BrowserSession:
         return self._page
 
     def _options(self, channel: str | None) -> dict:
-        opts: dict = {"user_data_dir": str(self.profile_dir), "headless": self.headless}
+        opts: dict = {
+            "user_data_dir": str(self.profile_dir),
+            "headless": self.headless,
+            # Playwright adds --no-sandbox by default, which makes Chrome show the
+            # "unsupported command-line flag: --no-sandbox" infobar. The sandbox works on Windows.
+            "chromium_sandbox": True,
+        }
         if channel:
             opts["channel"] = channel
         if self.headless:
