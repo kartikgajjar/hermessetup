@@ -46,8 +46,13 @@ class BrowserSession:
             opts["viewport"] = _HEADLESS_VIEWPORT
         else:
             opts["no_viewport"] = True
-            if self.offscreen:
-                opts["args"] = ["--window-position=-32000,-32000"]
+            # Always pass a position: Chrome saves the last window bounds in the profile, so a
+            # window that was once parked off-screen would otherwise reopen off-screen for --login.
+            opts["args"] = (
+                ["--window-position=-32000,-32000"]
+                if self.offscreen
+                else ["--window-position=60,40", "--window-size=1280,860"]
+            )
         return opts
 
     async def start(self) -> None:
