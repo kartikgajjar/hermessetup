@@ -32,16 +32,23 @@ _SEE_MORE = re.compile(r"see more", re.I)
 
 
 async def _expand_caption(page: Page) -> None:
-    """Click the caption's "... See more" so the full text is in the DOM. Best effort."""
-    try:
-        target = page.get_by_role("button", name=_SEE_MORE)
-        if await target.count() == 0:
-            target = page.get_by_text(re.compile(r"^\W*see more$", re.I))
-        if await target.count():
-            await target.first.click(timeout=3000)
-            await page.wait_for_timeout(800)
-    except Exception:
-        pass  # caption may already be complete; fall back to whatever text is there
+    """Click the caption's "... See more" so the full text is in the DOM.
+
+    The button renders after domcontentloaded, so poll for it (up to ~5 s) instead of checking once;
+    a single immediate check races the page and silently leaves the caption truncated.
+    """
+    for _ in range(10):
+        try:
+            target = page.get_by_role("button", name=_SEE_MORE)
+            if await target.count() == 0:
+                target = page.get_by_text(re.compile(r"^\W*see more$", re.I))
+            if await target.count():
+                await target.first.click(timeout=3000)
+                await page.wait_for_timeout(800)
+                return
+        except Exception:
+            pass
+        await page.wait_for_timeout(500)
 
 
 class Facebook(SiteAdapter):
