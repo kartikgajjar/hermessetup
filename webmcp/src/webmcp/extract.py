@@ -90,6 +90,7 @@ async def collect_links(
     limit: int = 20,
     max_scrolls: int = 15,
     main_selector: str = "main",
+    accept=None,
 ) -> list[dict]:
     """Open `url`, scroll an infinite list, return unique anchors whose href matches `href_regex`.
 
@@ -121,7 +122,8 @@ async def collect_links(
     for _ in range(max_scrolls + 1):
         before = len(seen)
         for item in await page.evaluate(js, href_regex):
-            seen.setdefault(item["href"], item)
+            if accept is None or accept(item):  # e.g. keep only cards in no collection
+                seen.setdefault(item["href"], item)
         if len(seen) >= limit:
             break
         stale = stale + 1 if len(seen) == before else 0

@@ -247,7 +247,10 @@ $Soul = @'
   Call webmcp_accounts first to see the labels, then ALWAYS pass account= explicitly,
   even when a site has only one login.
 - If several accounts fit the request and the user did not say which, ask -- never guess.
-- Read-only use, on explicit request. A "session expired" / "bot check" error means the
+- Tools that change something (facebook_move_reel, facebook_create_collection,
+  facebook_unsave_reel) preview first. Show the user the preview and pass confirm=true
+  only after they agree to that specific change -- never on your own initiative.
+- Otherwise read-only use, on explicit request. A "session expired" / "bot check" error means the
   user must act (webmcp --login <site> --account <label>); do not retry in a loop.
 
 # Durable data
