@@ -266,5 +266,6 @@ prompt build. Don't restart the gateway just for a SOUL.md edit; do restart for 
 **Open sessions keep their own MCP server processes.** `hermes gateway restart` only respawns the
 gateway's servers; a running desktop/CLI session keeps its old `webmcp` / `olk-bulk` process (Python
 never reloads edited source), so a code change looks like it did nothing there. After editing MCP
-server code, run `/reload-mcp` in each open session (or restart the app). To check, compare the
+server code, run `/reload-mcp` in each open TUI session. The desktop GUI has no such command: quit and
+reopen the app (or kill its stale server processes and start a new chat). To check, compare the
 server process start times (`Get-CimInstance Win32_Process`, filter on the script name) with the edit.
