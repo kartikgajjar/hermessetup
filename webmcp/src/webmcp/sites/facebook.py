@@ -20,7 +20,9 @@ import io
 import json
 import logging
 import os
+import random
 import re
+import time
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -54,16 +56,20 @@ _SAVED_TO = re.compile(r"Saved to ([^\n]+)")
 _SAVED_FROM = re.compile(r"Saved from (.+?)['’]s post")
 _NO_COLLECTION = {"none", "(none)", "no collection", "uncollected", "unsorted"}
 _CAPTION_CHARS = 1200
+_MAX_BATCH = 12          # moves per facebook_move_reels call
+_BATCH_BUDGET_S = 100    # stop starting new moves after this many seconds (tool timeouts)
 
 # Finds the saved-list card for a reel (largest ancestor holding only that reel's link), tags it
 # with data-webmcp-card and returns its text, or null if the reel is not rendered (yet).
 _CARD_JS = """(rid) => {
-  const a = [...document.querySelectorAll('a[href*="/reel/' + rid + '"]')][0];
+  // reels link as /reel/<id> on the main list but as /watch/?v=<id> on collection pages
+  const isReelLink = x => x.href.includes('/reel/') || x.href.includes('v=');
+  const a = [...document.querySelectorAll('a[href]')].filter(x => isReelLink(x) && x.href.includes(rid))[0];
   if (!a) return null;
   let node = a;
   while (node.parentElement) {
     const up = node.parentElement;
-    const others = [...up.querySelectorAll('a[href*="/reel/"]')].filter(x => !x.href.includes(rid));
+    const others = [...up.querySelectorAll('a[href]')].filter(x => isReelLink(x) && !x.href.includes(rid));
     if (others.length) break;
     node = up;
   }
@@ -226,13 +232,52 @@ async def _list(
     }
 
 
-async def _find_card(page: Page, rid: str, max_scrolls: int = 40) -> str | None:
+async def _find_card(page: Page, rid: str, max_scrolls: int = 150) -> str | None:
+    """Scroll the saved list until the reel's card is rendered; None once the list stops growing."""
+    last_height, stalled = -1, 0
     for _ in range(max_scrolls + 1):
         text = await page.evaluate(_CARD_JS, rid)
         if text is not None:
             return text
+        height = await page.evaluate("document.body.scrollHeight")
+        stalled = stalled + 1 if height == last_height else 0
+        if stalled >= 3:
+            return None  # reached the end of the list
+        last_height = height
         await extract.scroll(page, 1)
     return None
+
+
+async def _move_one(page: Page, rid: str, name: str) -> dict:
+    """Click through Add to Collection for one reel on an already-open saved list.
+    Expected problems come back as a status, never as an exception."""
+    try:
+        text = await _find_card(page, rid)
+        if text is None:
+            return {"status": "not_found", "detail": "not on the main saved list (it may already be in a collection)"}
+        current = parse_card(text)["collection"]
+        if current and current.lower() == name.lower():
+            return {"status": "already", "from": current}
+        card = page.locator(f'[data-webmcp-card="{rid}"]')
+        await card.get_by_role("button", name=re.compile(r"add to collection", re.I)).click(timeout=5000)
+        if not await _pick_in_dialog(page, name):
+            await page.keyboard.press("Escape")
+            return {"status": "error", "detail": f"collection {name!r} not offered in the dialog"}
+        await page.wait_for_timeout(1500)
+        await page.keyboard.press("Escape")
+        return {"status": "moved", "from": current}
+    except Exception as exc:  # a stuck dialog etc. must not abort the rest of a batch
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
+        return {"status": "error", "detail": str(exc)[:160]}
+
+
+async def _in_collection(page: Page, name: str, ids: set[str]) -> set[str]:
+    """Which of `ids` appear on the named collection's own page."""
+    data = await _list(page, name, limit=200, offset=0, max_scrolls=25)
+    return {r["id"] for r in data["reels"]} & ids
 
 
 async def _pick_in_dialog(page: Page, name: str) -> bool:
@@ -391,35 +436,91 @@ class Facebook(SiteAdapter):
                 account: Account = None,
                 confirm: Annotated[bool, Field(description="Must be true to act; the user must have agreed")] = False,
             ) -> dict:
-                """Put a saved reel into a collection. Previews unless confirm=true."""
+                """Put one saved reel into a collection. Previews unless confirm=true.
+                For several reels use facebook_move_reels (one call, one browser session)."""
                 rid = reel_id(reel)
 
                 async def work(page: Page) -> dict:
                     target = _resolve(await _collections(page), collection)
-                    await _open(page)
-                    text = await _find_card(page, rid)
-                    if text is None:
-                        raise WebmcpError(f"Reel {rid} is not in your saved list (or too far down to find).")
-                    current = parse_card(text)["collection"]
-                    plan = {"reel": rid, "from": current, "to": target["name"]}
-                    if current and current.lower() == target["name"].lower():
-                        return {"changed": False, "message": "Already in that collection.", **plan}
                     if not confirm:
-                        return {**_confirm_msg(f"Would move reel {rid} from {current or 'no collection'} to {target['name']}."), **plan}
+                        return _confirm_msg(f"Would move reel {rid} to {target['name']}.")
+                    await _open(page)
+                    result = await _move_one(page, rid, target["name"])
+                    if result["status"] == "moved":
+                        found = await _in_collection(page, target["name"], {rid})
+                        result["status"] = "moved" if rid in found else "unverified"
+                    return {"reel": rid, "to": target["name"], **result}
 
-                    card = page.locator(f'[data-webmcp-card="{rid}"]')
-                    await card.get_by_role("button", name=re.compile(r"add to collection", re.I)).click(timeout=5000)
-                    if not await _pick_in_dialog(page, target["name"]):
-                        await page.keyboard.press("Escape")
-                        raise WebmcpError(f"Collection {target['name']!r} not offered in the dialog.")
-                    await page.wait_for_timeout(1500)
-                    await page.keyboard.press("Escape")
+                return await run(account, work)
 
-                    await _open(page)  # re-read from scratch to verify
-                    after = await _find_card(page, rid)
-                    now = parse_card(after)["collection"] if after else None
-                    return {"changed": bool(now and now.lower() == target["name"].lower()),
-                            "collection_now": now, **plan}
+        if enabled("facebook_move_reels"):
+            @mcp.tool(name="facebook_move_reels", annotations=write)
+            async def facebook_move_reels(
+                moves: Annotated[
+                    list[dict[str, str]],
+                    Field(
+                        min_length=1,
+                        max_length=_MAX_BATCH,
+                        description='[{"reel": "<id or URL>", "collection": "<name>"}, ...]',
+                    ),
+                ],
+                account: Account = None,
+                confirm: Annotated[bool, Field(description="Must be true to act; the user must have agreed")] = False,
+            ) -> dict:
+                """Move several saved reels into collections in ONE browser session (much faster and
+                gentler on Facebook than one call per reel). Previews unless confirm=true. Stops
+                early near the time budget and reports which moves were skipped - call again with
+                those. Per-reel problems (not found, unknown collection) are reported in the
+                result, not raised."""
+                plan = []
+                for item in moves:
+                    try:
+                        plan.append((reel_id(item.get("reel", "")), (item.get("collection") or "").strip()))
+                    except WebmcpError as exc:
+                        plan.append((None, f"bad entry {item!r}: {exc}"))
+
+                async def work(page: Page) -> dict:
+                    cols = await _collections(page)
+                    rows, todo = [], []
+                    for rid, col in plan:
+                        if rid is None:
+                            rows.append({"reel": None, "status": "bad_entry", "detail": col})
+                            continue
+                        try:
+                            todo.append((rid, _resolve(cols, col)["name"]))
+                        except WebmcpError as exc:
+                            rows.append({"reel": rid, "to": col, "status": "bad_collection", "detail": str(exc)})
+                    if not confirm:
+                        return {
+                            **_confirm_msg(f"Would move {len(todo)} reel(s): "
+                                           + ", ".join(f"{r}->{c}" for r, c in todo[:40])),
+                            "invalid": rows,
+                        }
+
+                    deadline = time.monotonic() + _BATCH_BUDGET_S
+                    await _open(page)
+                    moved: dict[str, set[str]] = {}
+                    for rid, name in todo:
+                        if time.monotonic() > deadline:
+                            rows.append({"reel": rid, "to": name, "status": "skipped_time_budget"})
+                            continue
+                        res = await _move_one(page, rid, name)
+                        rows.append({"reel": rid, "to": name, **res})
+                        if res["status"] == "moved":
+                            moved.setdefault(name, set()).add(rid)
+                        await page.wait_for_timeout(random.randint(900, 2200))  # human-ish pacing
+
+                    for name, ids in moved.items():  # verify against each collection's own page
+                        if time.monotonic() > deadline + 25:
+                            break
+                        seen = await _in_collection(page, name, ids)
+                        for row in rows:
+                            if row.get("to") == name and row.get("reel") in ids and row["status"] == "moved":
+                                row["status"] = "moved" if row["reel"] in seen else "unverified"
+                    tally: dict[str, int] = {}
+                    for row in rows:
+                        tally[row["status"]] = tally.get(row["status"], 0) + 1
+                    return {"summary": tally, "results": rows}
 
                 return await run(account, work)
 
@@ -489,7 +590,8 @@ class Facebook(SiteAdapter):
                     await _open(page)
                     text = await _find_card(page, rid)
                     if text is None:
-                        raise WebmcpError(f"Reel {rid} is not in your saved list (or too far down to find).")
+                        return {"unsaved": False, "reel": rid, "status": "not_found",
+                                "detail": "not in the saved list"}
                     info = {"reel": rid, **parse_card(text)}
                     if not confirm:
                         return {**_confirm_msg(f"Would unsave reel {rid} ({(info['caption'] or '')[:60]!r})."), "reel_info": info}
@@ -500,7 +602,7 @@ class Facebook(SiteAdapter):
                     await page.wait_for_timeout(2000)
 
                     await _open(page)
-                    gone = await _find_card(page, rid, max_scrolls=15) is None
+                    gone = await _find_card(page, rid, max_scrolls=30) is None
                     return {"unsaved": gone, "reel": rid}
 
                 return await run(account, work)

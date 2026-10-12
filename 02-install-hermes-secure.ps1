@@ -250,6 +250,9 @@ $Soul = @'
 - Tools that change something (facebook_move_reel, facebook_create_collection,
   facebook_unsave_reel) preview first. Show the user the preview and pass confirm=true
   only after they agree to that specific change -- never on your own initiative.
+- To move several reels use facebook_move_reels (at most 12 per call), never one call per
+  reel. If a call reports errors, "not_found", a page "isn't available" or the MCP server is
+  paused, STOP and tell the user -- do not keep retrying; Facebook throttles bursts.
 - Otherwise read-only use, on explicit request. A "session expired" / "bot check" error means the
   user must act (webmcp --login <site> --account <label>); do not retry in a loop.
 
