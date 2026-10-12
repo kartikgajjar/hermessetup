@@ -102,7 +102,8 @@ async def collect_links(
     # i.e. the list card (caption, author...), found structurally rather than by class name.
     js = """(re) => {
         const rx = new RegExp(re);
-        const base = h => h.split('#')[0].split('?')[0].replace(/[/]$/, '');
+        // identity of a link = its first long number (a reel/video id), else the path without query
+        const base = h => (h.match(/[0-9]{8,}/) || [h.split('#')[0].split('?')[0].replace(/[/]$/, '')])[0];
         const links = [...document.querySelectorAll('a[href]')].filter(a => rx.test(a.href));
         return links.map(a => {
             const me = base(a.href);

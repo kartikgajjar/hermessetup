@@ -44,8 +44,9 @@ Collection = Annotated[
 ]
 
 _SAVED_URL = "https://www.facebook.com/saved/"
-_REEL_HREF = r"facebook\.com/reel/\d+"
+_REEL_HREF = r"facebook\.com/(reel/|watch/\?[^#]*v=)\d+"
 _REEL_URL = re.compile(r"^https://(www\.|m\.)?facebook\.com/reel/(\d+)(/|\?|$)")
+_ANY_REEL_LINK = re.compile(r"facebook\.com/(?:reel/|watch/\?[^#]*?v=)(\d+)")
 _REEL_ID = re.compile(r"(\d{6,})")
 _SEE_MORE = re.compile(r"see more", re.I)
 _DURATION = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?$")
@@ -142,6 +143,13 @@ async def _open(page: Page, url: str = _SAVED_URL) -> None:
     await page.wait_for_timeout(1500)  # let the list hydrate
 
 
+def _drop_initial(lines: list[str]) -> list[str]:
+    """A new collection has no cover image, so Facebook shows its initial letter as a first line."""
+    if len(lines) >= 2 and len(lines[0]) == 1 and lines[1].lower().startswith(lines[0].lower()):
+        return lines[1:]
+    return lines
+
+
 async def _collections(page: Page) -> list[dict]:
     """All collections: [{name, id, privacy}], from the Saved page's side navigation."""
     await _open(page)
@@ -157,6 +165,7 @@ async def _collections(page: Page) -> list[dict]:
     )
     seen: dict[str, dict] = {}
     for row in rows:
+        row["lines"] = _drop_initial(row["lines"])
         if row["lines"] and row["id"] not in seen:
             seen[row["id"]] = {
                 "name": row["lines"][0],
@@ -196,14 +205,14 @@ async def _list(
     )
     reels, ids = [], set()
     for item in links:
-        m = _REEL_URL.match(item["href"])
-        if not m or m.group(2) in ids:
+        m = _ANY_REEL_LINK.search(item["href"])
+        if not m or m.group(1) in ids:
             continue
-        ids.add(m.group(2))
+        ids.add(m.group(1))
         parsed = parse_card(item["text"])
         if label and label != "none":
             parsed["collection"] = label  # cards on a collection page may not repeat it
-        reels.append({"id": m.group(2), "url": f"https://www.facebook.com/reel/{m.group(2)}", **parsed})
+        reels.append({"id": m.group(1), "url": f"https://www.facebook.com/reel/{m.group(1)}", **parsed})
 
     window = reels[offset : offset + limit]
     has_more = len(reels) > offset + limit
@@ -229,11 +238,13 @@ async def _find_card(page: Page, rid: str, max_scrolls: int = 40) -> str | None:
 async def _pick_in_dialog(page: Page, name: str) -> bool:
     dlg = page.locator('[role="dialog"]').last
     await dlg.wait_for(timeout=8000)
-    for button in await dlg.locator('[role="button"]').all():
-        lines = [ln.strip() for ln in (await button.inner_text()).splitlines() if ln.strip()]
-        if lines and lines[0] == name:
-            await button.click(timeout=4000)
-            return True
+    for _ in range(12):  # the list renders a moment after the dialog frame does
+        for button in await dlg.locator('[role="button"]').all():
+            lines = _drop_initial([ln.strip() for ln in (await button.inner_text()).splitlines() if ln.strip()])
+            if lines and lines[0] == name:
+                await button.click(timeout=4000)
+                return True
+        await page.wait_for_timeout(500)
     return False
 
 
@@ -444,7 +455,23 @@ class Facebook(SiteAdapter):
 
                     after = await _collections(page)
                     made = next((c for c in after if c["name"].lower() == clean.lower()), None)
-                    return {"created": made is not None, "collection": made}
+                    privacy = None
+                    if made:
+                        # Read the privacy label from the collection's own page (the side-nav row
+                        # of a brand-new collection does not show it).
+                        await _open(page, f"{_SAVED_URL}?list_id={made['id']}")
+                        text = await extract.body_text(page, '[role="main"]')
+                        header = [ln.strip() for ln in text.splitlines() if ln.strip()][:3]
+                        privacy = next((ln for ln in header[1:] if ln.lower() in ("only me", "friends", "public")), None)
+                        made["privacy"] = privacy
+                    private = (privacy or "").lower() == "only me"
+                    out = {"created": made is not None, "collection": made, "private": private}
+                    if made and not private:
+                        out["warning"] = (
+                            f"Collection privacy is {made.get('privacy')!r}, not 'Only me'. "
+                            "Change it by hand on Facebook; this tool cannot."
+                        )
+                    return out
 
                 return await run(account, work)
 
