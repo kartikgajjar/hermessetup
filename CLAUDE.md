@@ -149,8 +149,10 @@ work) are not part of that set and get silently stranded after an update or fres
   multi-site, multi-account browser-session MCP generalising the LinkedIn pattern; sites are plugins in
   `webmcp/src/webmcp/sites/` (now `tipranks`, `etrade`, read-only). Identity is `(site, account)`, one
   patchright profile per account under `%USERPROFILE%\.webmcp\`. TipRanks/E*Trade adapters are
-  **uncalibrated** (written with no logged-in session) — run `webmcp --probe` after first login. Registered
-  2026-10-11 as `webmcp --sites facebook,tipranks` (accounts `fb_kartik`, `tiprank_kartik`, both calibrated); `etrade` is not registered yet. TipRanks sits behind Cloudflare, which refuses headless Chrome — its adapter sets `headless = False` and runs a headed window parked off-screen. See `webmcp/README.md`, `notes-mcp-webmcp.md`.
+  **uncalibrated** (written with no logged-in session) — run `webmcp --probe` after first login. Facebook and
+  TipRanks are calibrated against real logins and registered as `webmcp --sites facebook,tipranks`; `etrade` is not.
+  Account labels are chosen at `--login` time and never appear in the repo (this repo is public — keep personal
+  values, paths and labels in `notes-mcp-webmcp.local.md`, which is gitignored). TipRanks sits behind Cloudflare, which refuses headless Chrome — its adapter sets `headless = False` and runs a headed window parked off-screen. See `webmcp/README.md`, `notes-mcp-webmcp.md`.
 
 ## Model routing
 

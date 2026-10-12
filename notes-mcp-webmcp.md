@@ -5,11 +5,14 @@
 
 Code, usage and the add-a-site recipe: `webmcp/README.md`. Sites: `tipranks`, `etrade` (read-only), `facebook` (saved reels only: `facebook_saved_reels`, `facebook_reel`; Meta is the most likely to checkpoint the account — few scrolls, own account).
 
-## Registered (2026-10-11): facebook (`fb_kartik`) + tipranks (`tiprank_kartik`)
+## Registering (placeholders: `<repo>` = this repo's checkout, `<uv>` = absolute path to `uv.exe`)
+
+Account labels are yours to choose; they are never hardcoded. The exact commands and labels used on
+this machine are in `notes-mcp-webmcp.local.md` (untracked, see `.gitignore`).
 
 ```powershell
-uv run --project C:\LocalCode\ai\hermes\webmcp webmcp --login facebook --account fb_kartik
-"Y" | hermes mcp add webmcp --command C:\Users\karti\.local\bin\uv.exe --connect-timeout 120 --args run --project C:\LocalCode\ai\hermes\webmcp webmcp --sites facebook,tipranks
+uv run --project <repo>\webmcp webmcp --login facebook --account <label>      # once per account
+"Y" | hermes mcp add webmcp --command <uv> --connect-timeout 120 --args run --project <repo>\webmcp webmcp --sites facebook,tipranks
 hermes gateway restart
 ```
 

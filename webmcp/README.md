@@ -12,7 +12,7 @@ heuristics are uncalibrated** — see "First login" below.
 ## Setup
 
 ```powershell
-cd C:\LocalCode\ai\hermes\webmcp
+cd <repo>\webmcp
 uv sync
 uv run patchright install chromium      # only needed if real Chrome isn't installed (default uses Chrome)
 
