@@ -6,7 +6,7 @@ browser with a persistent, hand-logged-in profile, driven by MCP tools that read
 One server, many sites; each site is one file in `src/webmcp/sites/`. Each site can hold **several
 logins** ("accounts").
 
-Sites now: `tipranks`, `etrade` (read-only; no order tools exist), `facebook` (your saved reels only). **Their URLs and logged-in
+Sites now: `tipranks`, `etrade` (read-only; no order tools exist), `facebook` (your saved reels only), `medium` and `substack` (read articles/posts, reading list or saved list, search; added uncalibrated, so run `--probe` after the first login). **Their URLs and logged-in
 heuristics are uncalibrated** — see "First login" below.
 
 ## Setup
