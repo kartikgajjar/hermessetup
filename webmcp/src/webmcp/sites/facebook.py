@@ -149,6 +149,19 @@ async def _open(page: Page, url: str = _SAVED_URL) -> None:
     await page.wait_for_timeout(1500)  # let the list hydrate
 
 
+_UNAVAILABLE = re.compile(r"this page isn.t available", re.I)
+
+
+async def _main_empty(page: Page) -> bool:
+    """With every reel in a collection Facebook shows 'This page isn't available' instead of an
+    empty Saved list; the side navigation (collections) still loads, so that case means 'empty'."""
+    try:
+        text = await extract.body_text(page, '[role="main"]')
+    except Exception:
+        return False
+    return bool(_UNAVAILABLE.search(text)) and not await page.locator('a[href*="/reel/"]').count()
+
+
 def _drop_initial(lines: list[str]) -> list[str]:
     """A new collection has no cover image, so Facebook shows its initial letter as a first line."""
     if len(lines) >= 2 and len(lines[0]) == 1 and lines[1].lower().startswith(lines[0].lower()):
@@ -209,6 +222,10 @@ async def _list(
         page, url, _REEL_HREF, limit=(offset + limit) * 2 + 2, max_scrolls=max_scrolls,
         main_selector='[role="main"]', accept=accept,
     )
+    note = None
+    if not links and url == _SAVED_URL and await _main_empty(page):
+        note = ("The main Saved list is empty: Facebook shows 'This page isn't available' when "
+                "every saved reel is in a collection. Not an error or throttling.")
     reels, ids = [], set()
     for item in links:
         m = _ANY_REEL_LINK.search(item["href"])
@@ -229,6 +246,7 @@ async def _list(
         "has_more": has_more,
         "next_offset": offset + limit if has_more else None,
         "reels": window,
+        **({"note": note} if note else {}),
     }
 
 
@@ -254,7 +272,10 @@ async def _move_one(page: Page, rid: str, name: str) -> dict:
     try:
         text = await _find_card(page, rid)
         if text is None:
-            return {"status": "not_found", "detail": "not on the main saved list (it may already be in a collection)"}
+            detail = "not on the main saved list (it may already be in a collection)"
+            if await _main_empty(page):
+                detail = "main Saved list is empty - every saved reel is already in a collection"
+            return {"status": "not_found", "detail": detail}
         current = parse_card(text)["collection"]
         if current and current.lower() == name.lower():
             return {"status": "already", "from": current}
