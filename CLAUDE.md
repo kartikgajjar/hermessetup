@@ -150,7 +150,7 @@ work) are not part of that set and get silently stranded after an update or fres
   `webmcp/src/webmcp/sites/` (now `tipranks`, `etrade`, read-only). Identity is `(site, account)`, one
   patchright profile per account under `%USERPROFILE%\.webmcp\`. TipRanks/E*Trade adapters are
   **uncalibrated** (written with no logged-in session) — run `webmcp --probe` after first login. Facebook and
-  TipRanks are calibrated against real logins and registered as `webmcp --sites facebook,tipranks`; `etrade` is not.
+  TipRanks are calibrated against real logins and registered as `webmcp --sites facebook,tipranks,medium,substack`; `etrade` is not. `medium` and `substack` were calibrated live too (read-only).
   Account labels are chosen at `--login` time and never appear in the repo (this repo is public — keep personal
   values, paths and labels in `notes-mcp-webmcp.local.md`, which is gitignored). TipRanks sits behind Cloudflare, which refuses headless Chrome — its adapter sets `headless = False` and runs a headed window parked off-screen. See `webmcp/README.md`, `notes-mcp-webmcp.md`.
 
