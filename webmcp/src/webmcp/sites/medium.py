@@ -7,6 +7,7 @@ of the site, not verified against a logged-in session. Read-only: no clap/follow
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 from urllib.parse import quote_plus, urlparse
 
@@ -19,7 +20,8 @@ from .base import SiteAdapter
 
 # /@author/some-title-0123456789ab  or  /publication/some-title-0123456789ab
 _ARTICLE_HREF = r"medium\.com/(@[\w.-]+|[\w.-]+)/[\w%-]*-[0-9a-f]{10,12}(\?|#|$)"
-_READING_LIST = "https://medium.com/me/list/reading-list"
+_LIBRARY = "https://medium.com/me/lists"
+_NOT_FOUND = re.compile(r"^\s*page not found\s*$", re.I | re.M)
 
 Account = Annotated[str | None, Field(description="Account label; optional if only one is logged in")]
 
@@ -37,7 +39,7 @@ class Medium(SiteAdapter):
     login_url = "https://medium.com/m/signin"
     home_url = "https://medium.com/"
     auth_url_markers = ("/m/signin", "/signin", "/m/connect")
-    main_selector = "body"  # article pages have no stable <main>
+    main_selector = "article"  # falls back to <body> when a page has no <article>
     headless = False  # Medium sits behind Cloudflare; headed-off-screen like TipRanks
     login_confirm = True  # Google / email-link sign-in is multi-step
     min_chars = 300
@@ -63,15 +65,38 @@ class Medium(SiteAdapter):
                 is a member)."""
                 return await svc.read("medium", account, _check_article_url(url), scrolls=6)
 
+        if enabled("medium_lists"):
+            @mcp.tool(name="medium_lists", annotations=ro)
+            async def medium_lists(account: Account = None) -> dict:
+                """Your Medium library: the Reading list plus your custom lists (name + url)."""
+                async def work(page: Page) -> dict:
+                    return {"lists": await _library(page)}
+
+                return await svc.run("medium", account, work)
+
         if enabled("medium_reading_list"):
             @mcp.tool(name="medium_reading_list", annotations=ro)
             async def medium_reading_list(
                 account: Account = None,
+                list_url: Annotated[
+                    str | None,
+                    Field(description="A list URL from medium_lists; omit for the default Reading list"),
+                ] = None,
                 limit: Annotated[int, Field(ge=1, le=50)] = 20,
                 offset: Annotated[int, Field(ge=0)] = 0,
             ) -> dict:
-                """Articles saved to the reading list (url + card text), paged."""
-                return await _links(svc, account, _READING_LIST, limit, offset)
+                """Articles in the Reading list (default) or in another list from medium_lists
+                (url + card text), paged."""
+                async def resolve(page: Page) -> str:
+                    if list_url:
+                        return _check_article_url(list_url)
+                    lists = await _library(page)
+                    first = next((x for x in lists if x["default"]), None)
+                    if not first:
+                        raise WebmcpError("Could not find the Reading list in the Medium library")
+                    return first["url"]
+
+                return await _links(svc, account, resolve, limit, offset)
 
         if enabled("medium_search"):
             @mcp.tool(name="medium_search", annotations=ro)
@@ -85,15 +110,55 @@ class Medium(SiteAdapter):
                 return await _links(svc, account, f"https://medium.com/search?q={quote_plus(query.strip())}", limit, offset)
 
 
-async def _links(svc, account: str | None, url: str, limit: int, offset: int) -> dict:
+async def _library(page: Page) -> list[dict]:
+    """[{name, url, default}] from /me/lists. The Reading list is the entry whose link carries
+    Medium's own READING_LIST marker; its URL is /@<you>/list/reading-list."""
+    await extract.goto(page, _LIBRARY, wait_selector="body")
+    for _ in range(16):  # the lists render a few seconds after the page itself
+        if await page.locator('a[href*="/list/"]:not([href*="reading-list"])').count():
+            break
+        await page.wait_for_timeout(500)
+    await extract.scroll(page, 2)
+    rows = await page.evaluate(
+        """() => [...document.querySelectorAll('a[href]')].map(a => ({
+              href: a.href.split('?')[0],
+              marker: a.href.includes('READING_LIST'),
+              name: (a.innerText || '').trim().split(String.fromCharCode(10))[0].trim()
+        }))"""
+    )
+    out, seen = [], set()
+    for row in rows:
+        if row["marker"]:
+            owner = urlparse(row["href"]).path.strip("/").split("/")[0]  # "@you"
+            if not owner.startswith("@"):
+                continue
+            url, name, default = f"https://medium.com/{owner}/list/reading-list", "Reading list", True
+        elif "/@" in row["href"] and "/list/" in row["href"]:
+            slug = re.sub(r"-[0-9a-f]{10,12}$", "", row["href"].rstrip("/").rsplit("/", 1)[-1])
+            url, default = row["href"], False
+            name = row["name"] or slug.replace("-", " ")  # cover-image links carry no text
+        else:
+            continue
+        if url not in seen:
+            seen.add(url)
+            out.append({"name": name, "url": url, "default": default})
+    return out
+
+
+async def _links(svc, account: str | None, target, limit: int, offset: int) -> dict:
+    """`target` is a URL, or an async callable (page -> URL) for lists that need looking up first."""
     async def work(page: Page) -> dict:
+        url = target if isinstance(target, str) else await target(page)
         links = await extract.collect_links(
             page, url, _ARTICLE_HREF, limit=(offset + limit) * 2 + 2, max_scrolls=15, main_selector="body"
         )
+        if _NOT_FOUND.search(await extract.body_text(page, "body")):
+            # Medium's 404 page lists suggested stories, which would pass as results
+            raise WebmcpError(f"Medium says page not found: {url}")
         items, seen = [], set()
         for item in links:
             key = item["href"].split("?")[0]
-            if key in seen:
+            if key in seen or item["text"].startswith("Sidebar menu"):  # sidebar/nav links, not results
                 continue
             seen.add(key)
             items.append({"url": key, "text": item["text"][:600]})

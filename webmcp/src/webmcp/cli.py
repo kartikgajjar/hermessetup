@@ -156,6 +156,12 @@ async def _probe(site: str, account: str, url: str, headed: bool) -> int:
                     key = re.sub(r"\d{6,}", "<id>", m.group(1))
                     shapes[key] = shapes.get(key, 0) + 1
             print("link shapes    :", dict(sorted(shapes.items(), key=lambda kv: -kv[1])[:15]))
+            nav = await page.evaluate(
+                """() => [...document.querySelectorAll('a[href]')]
+                    .map(a => [(a.innerText || a.getAttribute('aria-label') || '').trim().split(String.fromCharCode(10))[0], a.href])
+                    .filter(([t]) => t && t.length < 24).slice(0, 40)"""
+            )
+            print("short-text links:", nav)
             print("--- first 800 chars ---")
             print(text[:800])
             return 0

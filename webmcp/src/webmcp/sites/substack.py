@@ -9,6 +9,7 @@ comment tools. Publications on custom domains are outside the allowed hosts by d
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 from urllib.parse import quote_plus, urlparse
 
@@ -20,9 +21,11 @@ from ..errors import WebmcpError
 from .base import SiteAdapter
 
 # <pub>.substack.com/p/<slug>  or  substack.com/@user/p-<id>  or  substack.com/home/post/p-<id>
-_POST_HREF = r"substack\.com/(p/|home/post/p-|@[\w.-]+/p-)[\w-]+"
+_POST_HREF = r"https?://[^/]+/(p/|home/post/p-|@[\w.-]+/p-)[\w-]+"  # custom domains use /p/ too
 _SAVED = "https://substack.com/inbox/saved"
 _INBOX = "https://substack.com/inbox"
+
+SubstackHosts = ("substack.com",)
 
 Account = Annotated[str | None, Field(description="Account label; optional if only one is logged in")]
 
@@ -61,7 +64,17 @@ class Substack(SiteAdapter):
                 account: Account = None,
             ) -> dict:
                 """Full text of one Substack post (paid posts included when subscribed)."""
-                return await svc.read("substack", account, _check_post_url(url), scrolls=6)
+                target = _check_post_url(url)
+                if extract.host_allowed(target, SubstackHosts):
+                    return await svc.read("substack", account, target, scrolls=6)
+                # Many publications live on their own domain (same /p/<slug> shape). Allowed for
+                # reading only when the path is a post, so the tool can't be steered to arbitrary pages.
+                if not re.match(r"^/p/[\w-]+/?$", urlparse(target).path):
+                    raise WebmcpError(f"not a Substack post URL (expected .../p/<slug>): {url!r}")
+                return await svc.run(
+                    "substack", account,
+                    lambda page: extract.read_page(page, target, main_selector="body", scrolls=6, min_chars=300),
+                )
 
         if enabled("substack_saved"):
             @mcp.tool(name="substack_saved", annotations=ro)
