@@ -41,11 +41,21 @@ generated reports there.
 - A mount change only applies to a *new* container. After changing it by hand, remove the running
   one (`docker rm -f hermes-<id>`; safe — working files are bind-mounted from the host).
 
-## webmcp (optional): browser-session MCP for TipRanks, E*Trade, ...
+## chrome-mcp (optional): your real Chrome as an MCP server
 
-`webmcp/` is a self-contained MCP server that reuses the LinkedIn-MCP idea (persistent, hand-logged-in
-browser profile + read-only page-text tools) for many sites, with several logins per site. See
-`webmcp/README.md` and `notes-mcp-webmcp.md`.
+`chrome-mcp/` is a vendored copy of [Mehmoodqureshi/chrome-mcp](https://github.com/Mehmoodqureshi/chrome-mcp)
+(MIT): a Chrome extension plus a local MCP server that lets Hermes read and drive the Chrome you are already
+signed into (TipRanks, Facebook, LinkedIn, Substack, Medium, ...). Because it is your real browser it gets past
+Cloudflare/bot checks. Needs Node >= 18. Chrome must be running, or its tools fail.
+
+```powershell
+.\08-setup-chrome-mcp.ps1 -Sites tipranks.com,facebook.com,linkedin.com,substack.com,medium.com
+```
+
+Then, once in Chrome: `chrome://extensions` -> Developer mode -> Load unpacked -> `%USERPROFILE%\chrome-mcp-extension`,
+and click **Connect** in the extension. Only the listed sites (and their subdomains) are reachable.
+`.\07-check-chrome-mcp-upstream.ps1` shows whether upstream has moved past the vendored copy; see
+`chrome-mcp/VENDORED.md`. Details and gotchas: `CLAUDE.md`.
 
 ## Discord Gateway Setup
 
@@ -84,6 +94,8 @@ the first time.
 | `04-restore-hermes-state.ps1` | Restores everything `03` backed up onto a fresh install, reinstalls any optional platform packages (e.g. Discord), and starts the gateway. |
 | `05-update-hermes.ps1` | Runs `hermes update` with a bounded retry around a known Windows gateway-discovery race instead of letting it abort outright. |
 | `06-reap-hermes-containers.ps1` | Removes orphaned Docker sandbox containers (`hermes-agent=1`) left running when a Hermes process dies before its idle reaper fires. `-Install` schedules it every 10 min; `-Now` reaps all idle ones immediately. |
+| `07-check-chrome-mcp-upstream.ps1` | Read-only: compares the vendored chrome-mcp commit with upstream `main` and lists new commits. |
+| `08-setup-chrome-mcp.ps1` | Builds the vendored chrome-mcp, installs its extension folder, registers it with Hermes for the given `-Sites`, and restarts the gateway. Re-run to change the site list. |
 
 ## Clean Re-install
 

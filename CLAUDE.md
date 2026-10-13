@@ -43,6 +43,7 @@ $null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD\05-updat
 .\05-update-hermes.ps1 -Plan     # read-only: runs `hermes update --plan` once, no mutation
 .\06-reap-hermes-containers.ps1  # a single sweep; -Now reaps all idle containers immediately
 python -m py_compile olk-bulk-mcp.py
+.\07-check-chrome-mcp-upstream.ps1   # read-only: has vendored chrome-mcp fallen behind upstream?
 ```
 
 `olk-bulk`'s tools default to `dry_run=true` — exercise them that way first. Destructive scripts
@@ -145,14 +146,27 @@ work) are not part of that set and get silently stranded after an update or fres
   "0 found". Two Graph facts behind the design: `mail search` returns at most 275 results however
   large `-n` is, and an invalid KQL property returns 0 rather than an error; `mail list` pages 1000 at
   a time and is what full-inbox scans use. Adding/changing tools here needs a gateway restart.
-- **webmcp** (`webmcp/`, this repo — own `pyproject.toml`, run via `uv run --project`) — generic
-  multi-site, multi-account browser-session MCP generalising the LinkedIn pattern; sites are plugins in
-  `webmcp/src/webmcp/sites/` (now `tipranks`, `etrade`, read-only). Identity is `(site, account)`, one
-  patchright profile per account under `%USERPROFILE%\.webmcp\`. TipRanks/E*Trade adapters are
-  **uncalibrated** (written with no logged-in session) — run `webmcp --probe` after first login. Facebook and
-  TipRanks are calibrated against real logins and registered as `webmcp --sites facebook,tipranks,substack`; `etrade` is not. `substack` was calibrated live too (read-only). A `medium` adapter was tried and removed: Cloudflare blocked its sign-in and then every automated read.
-  Account labels are chosen at `--login` time and never appear in the repo (this repo is public — keep personal
-  values, paths and labels in `notes-mcp-webmcp.local.md`, which is gitignored). TipRanks sits behind Cloudflare, which refuses headless Chrome — its adapter sets `headless = False` and runs a headed window parked off-screen. See `webmcp/README.md`, `notes-mcp-webmcp.md`.
+- **chrome-mcp** (`chrome-mcp/`, this repo — vendored MIT copy of github.com/Mehmoodqureshi/chrome-mcp, pinned
+  in `chrome-mcp/VENDORED.md`; `.\07-check-chrome-mcp-upstream.ps1` reports upstream drift) — replaced the
+  old `webmcp` (a separate patchright profile per login) on 2026-10-13. An MV3 extension drives **your real,
+  logged-in Chrome** over a loopback WebSocket; Hermes spawns the stdio server. Because it is the real browser,
+  Cloudflare/bot checks that blocked `webmcp` (Medium, TipRanks) don't trigger. Set up with
+  `.\08-setup-chrome-mcp.ps1 -Sites ...` (builds, installs the extension folder, registers, restarts the
+  gateway); then load `%USERPROFILE%\chrome-mcp-extension` unpacked in `chrome://extensions` and click **Connect**
+  once (`--persist-token` keeps the pairing). Live-tested read-only 2026-10-13 on TipRanks, Facebook, LinkedIn,
+  Substack, Medium. Things that bit or will bite:
+  - Registered as `node <repo>\chrome-mcp\dist\src\cli.js` (our vendored build), never `npx @latest`, always
+    with `--no-auto-update --no-telemetry`; `dist/` is gitignored, so a fresh clone needs `08` before it works.
+    Upstream's own `npm audit` findings sit in the SDK's HTTP stack — only reachable via `--http`/`--tunnel`; don't use those.
+  - The allowlist is **exact-hostname**: `tipranks.com` does not cover `www.tipranks.com` (`POLICY_DENIED`). `08`
+    passes both the bare domain and `*.domain`. `--enable-mutations` is on (navigation/click/type need it); the
+    allowlist is the guard. Eval/downloads/uploads stay off. `tabs_list` shows titles+URLs of **all** open tabs
+    regardless of the allowlist.
+  - **Chrome must be running.** Decided: no headless fallback — with Chrome closed the tools (and scheduled jobs
+    using them) fail. Tab-open → first `get_text` can be empty; retry/wait rather than conclude the page is blank.
+    Facebook's feed text is obfuscated (generic "Facebook" authors, zero-width text), so extraction is weaker
+    there than `webmcp`'s old calibrated saved-reels adapter. Multiple Chrome profiles pair as separate profiles.
+  - The separate `linkedin` server above is still registered and unchanged.
 
 ## Model routing
 
@@ -264,7 +278,7 @@ prompt build. Don't restart the gateway just for a SOUL.md edit; do restart for 
 `config.yaml`.
 
 **Open sessions keep their own MCP server processes.** `hermes gateway restart` only respawns the
-gateway's servers; a running desktop/CLI session keeps its old `webmcp` / `olk-bulk` process (Python
+gateway's servers; a running desktop/CLI session keeps its old `chrome-mcp` / `olk-bulk` process (Python
 never reloads edited source), so a code change looks like it did nothing there. After editing MCP
 server code, run `/reload-mcp` in each open TUI session. The desktop GUI has no such command: quit and
 reopen the app (or kill its stale server processes and start a new chat). To check, compare the
