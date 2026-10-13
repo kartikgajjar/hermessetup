@@ -1,0 +1,426 @@
+/**
+ * src/executor/types.ts — the single backend-agnostic Executor contract.
+ *
+ * Plain JSON-serializable in/out: no Playwright `Page`, no CDP session, no DOM
+ * handle ever crosses this boundary. Both `ExtensionExecutor` (over the WS
+ * bridge) and `CdpExecutor` (Playwright) implement this identical interface, so
+ * the tool layer never knows or cares which backend is live.
+ *
+ * Helpers (extract_links / read_as_markdown / fill_form) are composed in
+ * `mcp/helpers.ts` from these primitives; only `download` is privileged.
+ */
+
+import type { ObserverReadResult, DialogPolicy } from '../../shared/observers';
+import type { FillFieldOp, ProxyWireStatus } from '../../shared/protocol';
+
+export type { ObserverReadResult, DialogPolicy, FillFieldOp };
+
+export type BackendKind = 'extension' | 'cdp';
+export type WaitUntil = 'load' | 'domcontentloaded' | 'networkidle';
+export type KeyModifier = 'Alt' | 'Control' | 'Meta' | 'Shift';
+export type MouseButton = 'left' | 'right' | 'middle';
+
+/**
+ * A target element: selector XOR ref. `requireTarget()` enforces exactly-one-of.
+ * Refs are minted by getText/extractLinks/waitFor/eval results and are
+ * PAGE-scoped — invalidated when that tab navigates. Format:
+ * `el_<tabShort>_<backendNodeId>`.
+ */
+export type Target = { selector: string; ref?: never } | { ref: string; selector?: never };
+
+/**
+ * Tab handle. ALWAYS prefixed `<backend>:<sessionId>:<rawId>` so a handle minted
+ * by one backend/session can never mis-route after a fallback switch or a
+ * reconnect (a mismatch becomes a clean `STALE_TAB`, not a wrong-tab action).
+ */
+export type TabId = string;
+
+/**
+ * Which frame(s) of a tab a call acts on. Omitted = the top frame, which is
+ * every call that predates frame support.
+ *
+ * `frameId` pins one frame (ids come from `framesList`). `allFrames` scans every
+ * frame and acts on the first that has the element — the answer to "the button
+ * is in the checkout iframe and my selector never matches". Each frame is
+ * authorized against ITS OWN url before anything runs there, so a scan can never
+ * reach into a frame the allowlist does not cover.
+ */
+export interface FrameOpts {
+  frameId?: number;
+  allFrames?: boolean;
+}
+
+export interface FrameInfo {
+  frameId: number;
+  top: boolean;
+  url: string;
+  title: string;
+}
+
+export interface PdfResult {
+  dataBase64: string;
+  mimeType: 'application/pdf';
+  url: string;
+  title: string;
+}
+
+export interface ObserverArgs extends FrameOpts {
+  tabId?: TabId;
+  console?: boolean;
+  network?: boolean;
+  dialogs?: boolean;
+  sinceSeq?: number;
+  limit?: number;
+  clear?: boolean;
+  setPolicy?: DialogPolicy;
+  promptText?: string;
+  includeResources?: boolean;
+}
+
+export interface TabInfo {
+  tabId: TabId;
+  url: string;
+  title: string;
+  active: boolean;
+  index: number;
+}
+
+export interface NavResult {
+  url: string;
+  title: string;
+  httpStatus?: number;
+}
+
+/** `value` is truncated when serialized > 256KB. */
+export interface EvalResult {
+  ok: boolean;
+  value?: unknown;
+  type?: string;
+  error?: string;
+  /** Set when `value` exceeded MAX_EVAL_BYTES and was replaced by a truncated JSON string. */
+  truncated?: boolean;
+}
+
+/** Hard cap on a serialized eval result before it is truncated (see `truncateEvalResult`). */
+export const MAX_EVAL_BYTES = 256 * 1024;
+
+/**
+ * Enforce the EvalResult size cap uniformly across backends. Attempts to
+ * JSON-serialize `value`; if the UTF-8 byte length exceeds MAX_EVAL_BYTES the
+ * value is replaced by the JSON sliced to the cap with a `...[truncated]`
+ * marker and `truncated: true` is set. Non-serializable values (stringify
+ * throws or yields undefined) are left untouched — this never throws.
+ */
+export function truncateEvalResult(result: EvalResult): EvalResult {
+  if (!result.ok || result.value === undefined) return result;
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(result.value);
+  } catch {
+    return result; // not serializable — leave value as-is
+  }
+  if (json === undefined) return result;
+  if (Buffer.byteLength(json, 'utf8') <= MAX_EVAL_BYTES) return result;
+  // Slice by bytes, then trim any partial trailing UTF-8 char before appending the marker.
+  const sliced = Buffer.from(json, 'utf8').subarray(0, MAX_EVAL_BYTES).toString('utf8');
+  return { ...result, value: `${sliced}...[truncated]`, truncated: true };
+}
+
+export interface WaitResult {
+  matched: boolean;
+  ref?: string;
+  waitedMs: number;
+}
+
+export interface ActionOk {
+  ok: true;
+}
+
+export type ScreenshotFormat = 'png' | 'jpeg';
+
+/** Encoding knobs every backend accepts. All optional; see shared/screenshot.ts for defaults. */
+export interface ScreenshotEncoding {
+  format?: ScreenshotFormat;
+  /** JPEG only, 1-100. */
+  quality?: number;
+  /** Output pixels per CSS pixel (1 = CSS size, 2 = device pixels on a Retina display). */
+  scale?: number;
+}
+
+export interface ScreenshotResult {
+  dataBase64: string;
+  mimeType: 'image/png' | 'image/jpeg';
+  width: number;
+  height: number;
+  /** fullPage capture exceeded the height cap; `fullHeight` reports the real size. */
+  truncated: boolean;
+  fullHeight?: number;
+}
+
+export interface DownloadResult {
+  path: string;
+  backend: BackendKind;
+  bytes: number;
+  mimeType?: string;
+  suggestedName?: string;
+  /**
+   * Extension backend only: the absolute path where Chrome first saved the file
+   * (the user's Downloads dir). The server moves it into the active task's
+   * `downloads/` and clears this field, so it is never present in a final result
+   * returned to the MCP client.
+   */
+  sourcePath?: string;
+  /** Extension backend only: the chrome.downloads id, surfaced for diagnostics. */
+  downloadId?: number;
+}
+
+/** One interactive/landmark element in an accessibility snapshot. `ref` is stable until the tab navigates. */
+export interface SnapshotNode {
+  ref: string;
+  role: string;
+  name: string;
+  tag: string;
+  value?: string;
+  disabled?: boolean;
+  checked?: boolean;
+  /** A password field: present so it can be targeted, `value` deliberately absent. */
+  secret?: boolean;
+}
+
+export interface SnapshotResult {
+  url: string;
+  title: string;
+  nodes: SnapshotNode[];
+  truncated: boolean;
+  /** Locator mode, no match: what the page had of that role (for the error message). */
+  nearby?: string[];
+}
+
+/** A role/name query the page resolves itself (see shared/snapshot.ts). */
+export interface SnapshotLocator {
+  role?: string;
+  name?: string;
+}
+
+export interface CookieItem {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  secure: boolean;
+  httpOnly: boolean;
+  expires?: number;
+}
+
+export type StorageOp = 'get' | 'set' | 'remove' | 'clear';
+export interface StorageResult {
+  ok: boolean;
+  /** For `get`: the value (or null if absent). For others: omitted. */
+  value?: string | null;
+  /** For a keyless `get`: the whole store as a flat object. */
+  entries?: Record<string, string>;
+}
+
+export interface ExecutorStatus {
+  ready: boolean;
+  backend: BackendKind | null;
+  activeTabId: TabId | null;
+  /** WHY unavailable (port in use, no extension, policy denied, etc.). */
+  detail?: string;
+  extensionConnected: boolean;
+  cdpAttached: boolean;
+  /** Extension backend: the profile tools currently route to (set by profile_use). */
+  activeProfile?: string;
+  /** Extension backend: every profile with a live browser right now. */
+  connectedProfiles?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// The interface
+// ---------------------------------------------------------------------------
+
+export interface Executor {
+  readonly backend: BackendKind;
+
+  status(): ExecutorStatus;
+
+  /** Idempotent lazy connect/attach + self-heal; single-flight guarded. */
+  ensureReady(): Promise<void>;
+
+  /**
+   * Lightweight responsiveness probe (short deadline). Used by
+   * `withReadyExecutor` to detect a dead-but-not-yet-reconnected MV3 worker and
+   * fall through to CDP instead of eating a full command timeout.
+   */
+  ping(deadlineMs?: number): Promise<boolean>;
+
+  /** Close ONLY if we own the browser; never the user's Chrome. */
+  dispose(): Promise<void>;
+
+  /**
+   * The active tab's URL if the backend ALREADY knows it — the extension reports
+   * it on every result frame, so a gate that runs right after a command needs no
+   * round-trip. Null means "not known recently enough", and the caller must then
+   * resolve it properly; it never returns a guess. Optional: backends that can't
+   * report cheaply simply omit it.
+   */
+  cachedActiveUrl?(): string | null;
+
+  /**
+   * Same idea for an explicitly-targeted tab: its URL if the backend already
+   * knows it recently enough (the extension reports it on every result for that
+   * tab, and a `tabsList` reports it for every tab). Null → resolve properly.
+   */
+  cachedTabUrl?(tabId: TabId): string | null;
+  /**
+   * True for a tab this executor opened moments ago whose navigation may not
+   * have committed yet: Chrome reports no URL for it until then, so the policy
+   * gate should wait for one rather than fail. Optional: false when absent.
+   */
+  isOpeningTab?(tabId: TabId): boolean;
+
+  // --- tabs ---
+  tabsList(): Promise<TabInfo[]>;
+  tabSelect(tabId: TabId): Promise<TabInfo>;
+  /** Open a tab. `active` (default true) focuses it; pass false to open in the background. */
+  tabNew(url?: string, opts?: { active?: boolean }): Promise<TabInfo>;
+  tabClose(tabId: TabId): Promise<{ closed: true; tabId: TabId }>;
+
+  // --- navigation (active tab unless tabId given) ---
+  navigate(args: { url: string; tabId?: TabId; waitUntil?: WaitUntil }): Promise<NavResult>;
+  back(tabId?: TabId): Promise<NavResult>;
+  forward(tabId?: TabId): Promise<NavResult>;
+  reload(args?: { tabId?: TabId; waitUntil?: WaitUntil }): Promise<NavResult>;
+
+  // --- interaction (Target = {selector} XOR {ref}) ---
+  click(
+    t: Target,
+    opts?: { tabId?: TabId; button?: MouseButton; clickCount?: number; trusted?: boolean } & FrameOpts,
+  ): Promise<ActionOk>;
+  type(
+    t: Target,
+    text: string,
+    opts?: { tabId?: TabId; clear?: boolean; pressEnter?: boolean; keyEvents?: boolean; trusted?: boolean } & FrameOpts,
+  ): Promise<ActionOk>;
+  /** Choose option(s) of a <select> by value or visible label. */
+  selectOption(t: Target, values: string[], opts?: { tabId?: TabId } & FrameOpts): Promise<ActionOk>;
+  /** Value-set + input/change events (used by fill_form). */
+  fill(t: Target, value: string, opts?: { tabId?: TabId } & FrameOpts): Promise<ActionOk>;
+  press(key: string, opts?: { tabId?: TabId; modifiers?: KeyModifier[] }): Promise<ActionOk>;
+  hover(t: Target, opts?: { tabId?: TabId } & FrameOpts): Promise<ActionOk>;
+  scroll(opts: {
+    tabId?: TabId;
+    x?: number;
+    y?: number;
+    deltaX?: number;
+    deltaY?: number;
+    target?: Target;
+  } & FrameOpts): Promise<ActionOk>;
+
+  // --- read (policy-gated by current tab URL) ---
+  getText(t?: Target, opts?: { tabId?: TabId } & FrameOpts): Promise<{ text: string; ref?: string }>;
+  getHtml(t?: Target, opts?: { tabId?: TabId; outer?: boolean } & FrameOpts): Promise<{ html: string }>;
+  /** Accessibility snapshot: interactive/landmark elements with stable refs the model can target. */
+  snapshot(opts?: { tabId?: TabId; interactiveOnly?: boolean; max?: number; locator?: SnapshotLocator } & FrameOpts): Promise<SnapshotResult>;
+  /** Read cookies visible to the active tab's URL (or a given url). */
+  getCookies(opts?: { tabId?: TabId; url?: string }): Promise<{ cookies: CookieItem[] }>;
+  /** localStorage/sessionStorage get/set/remove/clear for the active tab. */
+  storage(args: { op: StorageOp; key?: string; value?: string; session?: boolean; tabId?: TabId }): Promise<StorageResult>;
+  screenshot(opts?: { tabId?: TabId; fullPage?: boolean; target?: Target } & ScreenshotEncoding & FrameOpts): Promise<ScreenshotResult>;
+  eval(expression: string, opts?: { tabId?: TabId; awaitPromise?: boolean } & FrameOpts): Promise<EvalResult>;
+  waitFor(opts: {
+    tabId?: TabId;
+    selector?: string;
+    textContains?: string;
+    gone?: boolean;
+    timeoutMs?: number;
+  } & FrameOpts): Promise<WaitResult>;
+
+  // --- optional capabilities -------------------------------------------
+  // Declared optional, like `cachedActiveUrl`, because a backend that cannot
+  // provide them should omit them rather than throw from a stub. The tool layer
+  // reports a clear "this backend cannot do that" instead of a mystery failure.
+
+  /**
+   * Write several fields in ONE round-trip (string = value-set like `fill`,
+   * boolean = toggle via click), in order, throwing the first field's failure.
+   * Resolves null when the live backend cannot batch (e.g. an extension build
+   * older than the op) — the caller then falls back to `fill`/`click` per field.
+   */
+  fillFields?(fields: FillFieldOp[], opts?: { tabId?: TabId } & FrameOpts): Promise<{ filled: number } | null>;
+  /** Every frame of a tab that the extension can inject into, with its URL. */
+  framesList?(opts?: { tabId?: TabId }): Promise<FrameInfo[]>;
+  /** Read (and configure) the in-page console / network / dialog observers. */
+  observers?(args: ObserverArgs): Promise<ObserverReadResult>;
+  /** The proxy this profile's browser uses and the IP sites see (set on the Options page, read-only here). */
+  proxyStatus?(): Promise<ProxyWireStatus>;
+  /** Render the page to PDF (Chrome's own print pipeline). */
+  printPdf?(opts?: {
+    tabId?: TabId;
+    landscape?: boolean;
+    printBackground?: boolean;
+    scale?: number;
+    paperWidth?: number;
+    paperHeight?: number;
+    pageRanges?: string;
+    preferCSSPageSize?: boolean;
+  }): Promise<PdfResult>;
+
+  // --- privileged, executor-owned (NOT composable) ---
+  download(args: {
+    url?: string;
+    target?: Target;
+    tabId?: TabId;
+    suggestedName?: string;
+  }): Promise<DownloadResult>;
+
+  /**
+   * Set the files on a file `<input>` (target by selector or ref) from local
+   * absolute paths — the upload equivalent of a file-picker, without the OS
+   * dialog. Privileged: sends local files to the page, so it is gated by
+   * `allowUploads` and the destination domain allowlist.
+   */
+  uploadFile(t: Target, files: string[], opts?: { tabId?: TabId }): Promise<ActionOk>;
+}
+
+// ---------------------------------------------------------------------------
+// Error
+// ---------------------------------------------------------------------------
+
+/**
+ * Server-side executor error codes. A superset of the wire `ExecutorErrorCode`
+ * (which only carries codes that originate inside the extension); these extra
+ * codes describe failures on the server half (no backend, launch failed, etc.).
+ */
+export type ExecutorErrorCodeLocal =
+  | 'NO_BACKEND'
+  | 'EXTENSION_DISCONNECTED'
+  | 'TIMEOUT'
+  | 'TAB_NOT_FOUND'
+  | 'STALE_TAB'
+  | 'SELECTOR_NOT_FOUND'
+  | 'REF_EXPIRED'
+  | 'EVAL_FAILED'
+  | 'LAUNCH_FAILED'
+  | 'DETACHED'
+  | 'TARGET_GONE'
+  | 'POLICY_DENIED'
+  | 'DEVTOOLS_OPEN'
+  | 'DOWNLOAD_FAILED'
+  | 'UPLOAD_FAILED'
+  | 'FRAME_NOT_FOUND'
+  | 'OBSERVERS_DISABLED'
+  | 'UNSUPPORTED'
+  | 'BACKPRESSURE'
+  /** The page is a sign-in wall (session expired mid-run). Raised only when the caller opts in via `failOnAuthWall`. */
+  | 'AUTH_REQUIRED';
+
+export class ExecutorError extends Error {
+  constructor(
+    public readonly code: ExecutorErrorCodeLocal,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ExecutorError';
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "name": "@mehmoodqureshi/chrome-mcp",
+  "mcpName": "io.github.Mehmoodqureshi/chrome-mcp",
+  "version": "0.9.22",
+  "description": "Drive your real Chrome browser over MCP \u2014 real logins, real cookies. A stdio MCP server (CLI) plus an MV3 extension, driving Chrome via chrome.scripting/chrome.tabs. Multi-tab batch automation, accessibility snapshots, deny-all security by default.",
+  "author": "Mehmood Ur Rehman Qureshi",
+  "license": "MIT",
+  "homepage": "https://mcp-browser-extension.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mehmoodqureshi/chrome-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Mehmoodqureshi/chrome-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "chrome-mcp": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/**/*.js",
+    "dist/src/**/*.d.ts",
+    "dist/shared/**/*.js",
+    "dist/shared/**/*.d.ts",
+    "extension-dist",
+    "!extension-dist/pairing.json",
+    "README.md",
+    "SETUP.md",
+    "LICENSE",
+    "docs/BLUEPRINT.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "chrome",
+    "chrome-extension",
+    "browser-automation",
+    "browser-mcp",
+    "real-browser",
+    "logged-in",
+    "session",
+    "cookies",
+    "authenticated",
+    "web-scraping",
+    "ai-agent",
+    "claude",
+    "claude-code"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:ext": "node extension/scripts/build-ext.mjs",
+    "pack:ext": "npm run build:ext && node extension/scripts/pack-ext.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:ext": "tsc -p tsconfig.ext.json",
+    "clean": "rimraf dist extension-dist",
+    "test": "npm run clean && npm run build && npm run build:ext && node --test dist/test/*.test.js",
+    "test:hitl": "npm run build && node dist/hitl/index.js",
+    "prepack": "npm run clean && npm run build && npm run build:ext"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^20.17.10",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.0",
+    "playwright": "^1.49.1",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

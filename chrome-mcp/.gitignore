@@ -1,0 +1,37 @@
+node_modules/
+dist/
+extension-dist/
+*.tsbuildinfo
+chrome-mcp-extension-*.zip
+
+# Local, secret, or machine-specific
+.claude/settings.local.json
+.chrome-mcp/
+profile-photo.png
+token
+*.handshake
+handshake.json
+test-targets.json
+policy.json
+
+# Session scratch (ad-hoc drivers / command logs)
+.persistent.cjs
+.*_harness.mjs
+.search_driver.mjs
+.capture_*.mjs
+.shot.mjs
+.cmds.jsonl
+.results.jsonl
+scratchpad_sitemap.xml
+capture/
+scaffold/
+.env
+.env.*
+.DS_Store
+
+# Research deliverables — keep local only, never commit
+wordpress-research/
+react-research/
+wpos-audit-reports/
+store-screenshot-*.png
+video/

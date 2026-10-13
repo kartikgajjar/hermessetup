@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP Browser Extension — Settings</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.2rem; }
+      label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+      input { width: 100%; padding: 0.5rem; box-sizing: border-box; font: inherit; }
+      button { margin-top: 1rem; padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
+      .status { margin-top: 1rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; background: #eef; }
+      code { background: #f3f3f3; padding: 0 0.25rem; }
+      .hint { color: #555; font-size: 0.9rem; }
+      label.check { display: flex; gap: 0.5rem; align-items: center; font-weight: 600; margin-top: 1rem; }
+      label.check input { width: auto; }
+      h2 { font-size: 1.05rem; margin-top: 2rem; }
+      ul.sites { list-style: none; padding: 0; margin: 0.5rem 0; }
+      ul.sites li { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid #eee; }
+      ul.sites li span { flex: 1; overflow-wrap: anywhere; }
+      ul.sites li button { margin: 0; padding: 0.25rem 0.75rem; }
+      ul.sites li .tag { flex: none; color: #555; font-size: 0.85rem; }
+      .blocked li { background: #fff7ed; padding-left: 0.5rem; }
+      .row { display: flex; gap: 0.5rem; }
+      .row button { margin-top: 0; }
+      .quick { margin: 1rem 0 1.25rem; padding: 1rem; border-radius: 0.6rem; background: #eef4ff; border: 1px solid #c9dafc; }
+      .quick button.primary { margin-top: 0; width: 100%; padding: 0.7rem; font-weight: 600; color: #fff; border: 0; border-radius: 0.5rem; background: linear-gradient(135deg, #2563eb, #7c3aed); }
+      .quick .hint { margin: 0.5rem 0 0; }
+      .quick .hint.error { color: #b45309; }
+      select { width: 100%; padding: 0.5rem; font: inherit; }
+      .grid { display: grid; grid-template-columns: 1fr 7rem; gap: 0 0.5rem; }
+      .proxy-on { background: #ecfdf5; }
+      .proxy-err { background: #fff7ed; }
+    </style>
+  </head>
+  <body>
+    <h1>MCP Browser Extension</h1>
+    <p class="hint">Pair this browser with the MCP Browser Extension server your AI client runs.</p>
+    <div class="quick" id="quick">
+      <button id="connect" class="primary">Connect</button>
+      <p class="hint" id="connect-msg">One click fetches the port and token from the server. Chrome asks once for permission.</p>
+    </div>
+    <p class="hint" id="manual-intro">Or pair by hand:</p>
+    <p class="hint" id="source">Checking pairing source…</p>
+    <p class="hint">
+      Manual pairing: run <code>npx -y @mehmoodqureshi/chrome-mcp@latest --print-pairing</code>,
+      open the printed <code>handshake.json</code>, and paste its <code>port</code>
+      and <code>token</code> below.
+    </p>
+    <label for="port">Port</label>
+    <input id="port" type="number" inputmode="numeric" placeholder="38017" />
+    <label for="token">Token</label>
+    <input id="token" type="password" placeholder="leave blank to keep the current token" />
+    <label for="profile">Profile</label>
+    <input id="profile" type="text" placeholder="automatic" />
+    <p class="hint">
+      Optional. Leave blank and the server names this browser for you — the first is
+      <code>default</code>, then <code>profile-2</code>, <code>profile-3</code>… — and
+      remembers it. Rename one with <code>profile_rename</code>, switch with
+      <code>profile_use</code>. Type a name here only to pin one yourself.
+    </p>
+    <p class="hint" id="paired-as"></p>
+    <label class="check"><input id="tab-border" type="checkbox" checked /> Outline the tabs the agent is working in</label>
+    <p class="hint">
+      A border in the page's theme colour (blue when the site has none) marks every tab the
+      agent is driving. It never shows in screenshots or PDFs, and is removed when the server disconnects.
+    </p>
+    <button id="save">Save & connect</button>
+    <div class="status" id="status">Status: unknown</div>
+
+    <section id="sites-section">
+      <h2>Allowed sites</h2>
+      <p class="hint">
+        MCP Browser Extension only reads or acts on sites you allow. Allowing one here applies at once to every
+        AI session, with no restart, and is remembered.
+      </p>
+      <div id="blocked-wrap" hidden>
+        <p><strong>Recently blocked</strong></p>
+        <ul class="sites blocked" id="blocked"></ul>
+      </div>
+      <ul class="sites" id="allowed"></ul>
+      <p class="hint" id="sites-note"></p>
+      <label for="new-site">Allow a site</label>
+      <div class="row">
+        <input id="new-site" type="text" placeholder="example.com or *.example.com" />
+        <button id="add-site">Allow</button>
+      </div>
+    </section>
+    <section id="proxy-section">
+      <h2>Proxy</h2>
+      <p class="hint">
+        Send this Chrome profile's traffic through a proxy, so the sites the agent opens see the proxy's IP.
+        Chrome applies a proxy to the whole profile, never one tab, so set it in a Chrome profile you keep for
+        agent work (one profile per IP), not the one you browse in. If the proxy goes down, pages fail to load
+        rather than fall back to your real IP. The agent can check the proxy with <code>proxy_status</code> but
+        cannot change it or see the password.
+      </p>
+      <label class="check"><input id="proxy-enabled" type="checkbox" /> Use a proxy in this Chrome profile</label>
+      <label for="proxy-scheme">Type</label>
+      <select id="proxy-scheme">
+        <option value="http">HTTP</option>
+        <option value="https">HTTPS</option>
+        <option value="socks5">SOCKS5</option>
+        <option value="socks4">SOCKS4</option>
+      </select>
+      <div class="grid">
+        <label for="proxy-host">Host</label>
+        <label for="proxy-port">Port</label>
+        <input id="proxy-host" type="text" placeholder="proxy.example.com or host:port:user:pass" />
+        <input id="proxy-port" type="number" inputmode="numeric" placeholder="8080" />
+      </div>
+      <label for="proxy-user">Username</label>
+      <input id="proxy-user" type="text" autocomplete="off" placeholder="optional" />
+      <label for="proxy-pass">Password</label>
+      <input id="proxy-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep the current password" />
+      <p class="hint">Chrome cannot log in to a SOCKS proxy, so use HTTP or HTTPS when your proxy needs a username.</p>
+      <label class="check"><input id="proxy-webrtc" type="checkbox" /> Stop WebRTC from revealing the real IP</label>
+      <p class="hint">Video-call features can reach the internet around the proxy. Chrome asks once to let this extension change that privacy setting.</p>
+      <div class="row">
+        <button id="proxy-save">Save proxy</button>
+        <button id="proxy-check">Check IP</button>
+      </div>
+      <div class="status" id="proxy-status">Proxy: off</div>
+    </section>
+    <script src="options.js"></script>
+  </body>
+</html>
