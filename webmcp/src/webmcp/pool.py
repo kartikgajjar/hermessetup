@@ -19,7 +19,7 @@ from patchright.async_api import Page
 
 from . import config, extract, profiles, sites
 from .browser import BrowserSession
-from .errors import AuthRequired
+from .errors import AuthRequired, BotChallenge
 
 logger = logging.getLogger("webmcp.pool")
 
@@ -32,6 +32,12 @@ class _Entry:
     session: BrowserSession | None = None
     release: contextlib.ExitStack | None = None
     last_used: float = 0.0
+
+
+# After a bot check, keep away from that (site, account) for a while: retrying while Cloudflare
+# distrusts the session only prolongs it. In-memory, per server process.
+COOLDOWN_SECONDS = 30 * 60
+_cooldown_until: dict[tuple[str, str], float] = {}
 
 
 class Service:
@@ -81,6 +87,12 @@ class Service:
         adapter = sites.get(site)
         acct = profiles.resolve_account(site, account)
         key = (site, acct)
+        wait = _cooldown_until.get(key, 0) - time.monotonic()
+        if wait > 0:
+            raise BotChallenge(
+                f"{site}/{acct}: the site bot-checked this session recently; not touching it for another "
+                f"{int(wait // 60) + 1} min so the check can clear. Tell the user; do not retry."
+            )
         entry = self._entries.setdefault(key, _Entry())
         async with entry.lock:
             if entry.session is None:
@@ -106,6 +118,9 @@ class Service:
                 )
                 try:
                     result = await fn(page)
+                except BotChallenge:
+                    _cooldown_until[key] = time.monotonic() + COOLDOWN_SECONDS
+                    raise
                 except Exception:
                     # A login page is short, so it would otherwise surface as "rate limited".
                     if adapter.url_needs_login(page.url):
