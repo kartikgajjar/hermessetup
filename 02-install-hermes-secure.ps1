@@ -243,7 +243,7 @@ $Soul = @'
 
 # Web sessions (webmcp)
 
-- Tools for logged-in sites (facebook_*, tipranks_*, medium_*, substack_*, web_read) take an account label.
+- Tools for logged-in sites (facebook_*, tipranks_*, substack_*, web_read) take an account label.
   Call webmcp_accounts first to see the labels, then ALWAYS pass account= explicitly,
   even when a site has only one login.
 - If several accounts fit the request and the user did not say which, ask -- never guess.

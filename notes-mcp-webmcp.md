@@ -12,7 +12,7 @@ this machine are in `notes-mcp-webmcp.local.md` (untracked, see `.gitignore`).
 
 ```powershell
 uv run --project <repo>\webmcp webmcp --login facebook --account <label>      # once per account
-"Y" | hermes mcp add webmcp --command <uv> --connect-timeout 120 --args run --project <repo>\webmcp webmcp --sites facebook,tipranks,medium,substack
+"Y" | hermes mcp add webmcp --command <uv> --connect-timeout 120 --args run --project <repo>\webmcp webmcp --sites facebook,tipranks,substack
 hermes gateway restart
 ```
 
