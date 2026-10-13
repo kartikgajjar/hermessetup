@@ -40,7 +40,7 @@ class Medium(SiteAdapter):
     home_url = "https://medium.com/"
     auth_url_markers = ("/m/signin", "/signin", "/m/connect")
     main_selector = "article"  # falls back to <body> when a page has no <article>
-    headless = False  # Medium sits behind Cloudflare; headed-off-screen like TipRanks
+    headless = True  # no window; untested against Cloudflare - switch to False (hidden headed) if a bot check appears
     login_confirm = True  # Google / email-link sign-in is multi-step
     min_chars = 300
 
