@@ -6,6 +6,7 @@
  * (Only `download_file` is privileged and lives on the executor.)
  */
 
+import { ExecutorError } from '../executor/types';
 import type { Executor, FrameOpts, Target } from '../executor/types';
 import { htmlToMarkdown } from './markdown-extract';
 
@@ -39,23 +40,73 @@ export async function extractLinks(
 
   const frames: FrameOpts = { frameId: args.frameId, allFrames: args.allFrames };
   let links: LinkOut[];
-  const res = await ex.eval(expr, { tabId: args.tabId, ...frames });
-  if (res.ok && Array.isArray(res.value)) {
+  // eval is OFF by default (safe-mode) and a denial is THROWN as POLICY_DENIED, not
+  // returned as `{ ok: false }`, so the fallback below has to be reached by catching
+  // it. (Local fix, see VENDORED.md: before this, extract_links failed outright in the
+  // default configuration and this fallback was dead code.) Only an eval denial falls
+  // back; any other error still propagates.
+  let res: Awaited<ReturnType<Executor['eval']>> | null = null;
+  try {
+    res = await ex.eval(expr, { tabId: args.tabId, ...frames });
+  } catch (err) {
+    if (!(err instanceof ExecutorError && err.code === 'POLICY_DENIED')) throw err;
+  }
+  if (res && res.ok && Array.isArray(res.value)) {
     links = res.value as LinkOut[];
   } else {
-    // Fallback: parse hrefs out of the HTML (e.g. when eval is policy-denied).
+    // Fallback: parse hrefs out of the HTML. The DOM's `a.href` is absolute but the
+    // serialized attribute is not, so resolve against the tab's URL and decode
+    // attribute entities (`&amp;` is everywhere in real hrefs); then apply the same
+    // sameOriginOnly filter the eval path applies.
     const { html } = await ex.getHtml(args.selector ? { selector: args.selector } : undefined, {
       tabId: args.tabId,
       ...frames,
     });
+    const base = await pageUrl(ex, args.tabId);
+    const origin = base ? new URL(base).origin : null;
     links = [];
     const re = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) !== null) {
-      links.push({ href: m[1], text: m[2].replace(/<[^>]+>/g, '').trim().slice(0, 200) });
+      const href = resolveHref(decodeEntities(m[1]), base);
+      if (!href) continue;
+      if (args.sameOriginOnly && origin && !href.startsWith(origin)) continue;
+      links.push({ href, text: decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim().slice(0, 200) });
     }
   }
   return { links: refineLinks(links, args) };
+}
+
+/** The URL of `tabId` (or the active tab), or null when it cannot be determined. */
+async function pageUrl(ex: Executor, tabId?: string): Promise<string | null> {
+  try {
+    const tabs = await ex.tabsList();
+    const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs.find((t) => t.active);
+    return tab?.url || null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+/** Resolve a serialized href against the page URL; null for fragments and non-navigable schemes. */
+function resolveHref(href: string, base: string | null): string | null {
+  const h = href.trim();
+  if (!h || h.startsWith('#') || /^(javascript|data|blob):/i.test(h)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(h)) return h; // already absolute: leave as written
+  try {
+    return new URL(h, base ?? undefined).href;
+  } catch {
+    return null; // relative href with no usable base
+  }
 }
 
 /**

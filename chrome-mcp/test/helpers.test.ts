@@ -38,6 +38,44 @@ test('extractLinks falls back to HTML parsing when eval is unavailable', async (
   assert.equal(links[0].text, 'Example');
 });
 
+test('extractLinks falls back to HTML when eval is DENIED (thrown POLICY_DENIED), resolving relative hrefs', async () => {
+  // The default (safe-mode) configuration: the extension throws POLICY_DENIED for eval.
+  const fake = {
+    async eval() {
+      throw new ExecutorError('POLICY_DENIED', 'eval is disabled (safe-mode). Pass --unsafe-enable-eval to allow it.');
+    },
+    async getHtml() {
+      return {
+        html:
+          '<a href="/@alice/post-one?source=a&amp;x=1"><h2>Post &amp; One</h2></a>' +
+          '<a href="https://other.example/x">Elsewhere</a>' +
+          '<a href="#top">Top</a><a href="javascript:void(0)">JS</a>',
+      };
+    },
+    async tabsList() {
+      return [{ tabId: '1', url: 'https://medium.com/@alice', title: 't', active: true, index: 0 }];
+    },
+  } as unknown as Executor;
+
+  const { links } = await extractLinks(fake, {});
+  assert.deepEqual(links, [
+    { href: 'https://medium.com/@alice/post-one?source=a&x=1', text: 'Post & One' },
+    { href: 'https://other.example/x', text: 'Elsewhere' },
+  ]);
+
+  const same = await extractLinks(fake, { sameOriginOnly: true });
+  assert.deepEqual(same.links.map((l) => l.href), ['https://medium.com/@alice/post-one?source=a&x=1']);
+});
+
+test('extractLinks still propagates non-eval-denial errors', async () => {
+  const fake = {
+    async eval() {
+      throw new ExecutorError('EXTENSION_DISCONNECTED', 'gone');
+    },
+  } as unknown as Executor;
+  await assert.rejects(() => extractLinks(fake, {}), /gone/);
+});
+
 test('extractLinks dedupe collapses repeated hrefs and prefers a non-empty label', async () => {
   // A fake executor whose eval returns anchors directly (the primary path), with
   // the same href appearing thrice — first with an empty label, then labelled.
