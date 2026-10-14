@@ -13,13 +13,15 @@ SYNCED_ON=2026-10-13
 Record every edit to vendored files here (file + why), so a re-sync can re-apply or
 drop them deliberately.
 
-- 2026-10-13 `src/mcp/helpers.ts` (+ tests in `test/helpers.test.ts`): `extractLinks` now
+- 2026-10-13 `src/mcp/helpers.ts` (+ tests in `test/helpers.test.ts`) -- reported upstream as
+  https://github.com/Mehmoodqureshi/chrome-mcp/issues/7 (check it on every re-sync: once fixed
+  there, drop this patch and take upstream's version): `extractLinks` now
   catches the thrown `POLICY_DENIED` for a disabled `eval` and falls back to parsing
   `getHtml` (it already had that fallback, but checked a `{ok:false}` result that is never
   returned, so `extract_links` failed outright in the default safe-mode). The fallback now
   also resolves relative hrefs against the tab URL, decodes `&amp;` etc., drops `#`/`javascript:`
   links, and honors `sameOriginOnly`. Only an eval denial falls back; other errors propagate.
-- 2026-10-13 `src/mcp/tools.ts`: `get_text` returns `savedTo` (host path of the full,
+- 2026-10-13 `src/mcp/tools.ts` (same upstream issue, "Minor, related" section): `get_text` returns `savedTo` (host path of the full,
   uncapped read) when its output was truncated, and `read_as_markdown`'s truncation notice
   names that path instead of "the task's results/ dir". The path was previously discarded.
 - Not changed (judged already covered or not worth diverging): `get_text` already takes
