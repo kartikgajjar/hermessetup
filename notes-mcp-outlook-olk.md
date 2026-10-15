@@ -80,7 +80,7 @@ olk`.
 
 ```
 hermes mcp add olk --command olk --args mcp --account ekartka@hotmail.com \
-  --allow-write=mail_move --allow-destructive=mail_delete
+  --allow-write=mail_move --allow-destructive=mail_delete --allow-send=mail_send
 ```
 
 (re-adding an existing server name prompts `Overwrite? [y/N]` before the usual

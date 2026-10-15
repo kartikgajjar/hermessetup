@@ -124,7 +124,7 @@ work) are not part of that set and get silently stranded after an update or fres
   flow actually authenticates — whoever completes the code in the browser picks the account;
   always verify with `olk auth status --account <email>` afterward, don't trust the flag.
   Write/destructive tools (`mail_move`, `mail_delete`) are opt-in via
-  `--allow-write=mail_move --allow-destructive=mail_delete` on re-registration. **Not** gated by
+  `--allow-write=mail_move --allow-destructive=mail_delete --allow-send=mail_send` on re-registration (send enabled 2026-10-14; first real send with an attachment succeeded; SOUL "Sending email" is the only gate). **Not** gated by
   Hermes's approval prompt: `tools/mcp_tool.py` only gates non-`readOnlyHint` MCP calls on servers
   registered with `trust: untrusted`; with no `trust:` key (the setup here) they run unprompted,
   cron included (confirmed 2026-10-04). Code-level checks are the only real guard.
