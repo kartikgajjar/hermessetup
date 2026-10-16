@@ -2,7 +2,7 @@
   "name": "@mehmoodqureshi/chrome-mcp",
   "mcpName": "io.github.Mehmoodqureshi/chrome-mcp",
   "version": "0.9.22",
-  "description": "Drive your real Chrome browser over MCP \u2014 real logins, real cookies. A stdio MCP server (CLI) plus an MV3 extension, driving Chrome via chrome.scripting/chrome.tabs. Multi-tab batch automation, accessibility snapshots, deny-all security by default.",
+  "description": "Drive your real Chrome browser over MCP — real logins, real cookies. A stdio MCP server (CLI) plus an MV3 extension, driving Chrome via chrome.scripting/chrome.tabs. Multi-tab batch automation, accessibility snapshots, deny-all security by default.",
   "author": "Mehmood Ur Rehman Qureshi",
   "license": "MIT",
   "homepage": "https://mcp-browser-extension.com",
@@ -62,6 +62,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "htmlparser2": "^10.1.0",
     "ws": "^8.18.0",
     "zod": "^4.4.3"
   },

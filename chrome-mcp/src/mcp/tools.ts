@@ -981,9 +981,8 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return jsonResult({
       ...res,
       text: capped.text,
+      ...(savedTo ? { savedTo } : {}),
       ...truncationMeta(capped),
-      // Local change (VENDORED.md): say where the full, uncapped read was written.
-      ...(capped.truncated && savedTo ? { savedTo } : {}),
       ...(clean.redactions ? { redactions: clean.redactions } : {}),
     });
   },
@@ -1121,7 +1120,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
     // the body rather than as sibling JSON fields.
     return textResult(
       capped.truncated
-        ? `${capped.text}\n\n[truncated: ${capped.returnedBytes} of ${capped.totalBytes} bytes — raise maxBytes or narrow with selector; the full document was saved to ${savedTo ?? "the task's results/ dir"}]`
+        ? `${capped.text}\n\n[truncated: ${capped.returnedBytes} of ${capped.totalBytes} bytes — raise maxBytes or narrow with selector${savedTo ? `; full document saved to ${savedTo}` : '; full document could not be saved'}]`
         : capped.text,
     );
   },

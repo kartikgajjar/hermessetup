@@ -14,13 +14,18 @@ $commit  = [regex]::Match($meta, '(?m)^UPSTREAM_COMMIT=(\w+)').Groups[1].Value
 $version = [regex]::Match($meta, '(?m)^UPSTREAM_VERSION=(\S+)').Groups[1].Value
 if (-not $commit) { throw 'UPSTREAM_COMMIT not found in chrome-mcp\VENDORED.md' }
 
-$repo = 'Mehmoodqureshi/chrome-mcp'
+# Renamed upstream 2026-10-15 (chrome-mcp -> mcp-browser-extension); the old name only redirects.
+$repo = 'Mehmoodqureshi/mcp-browser-extension'
+# REVIEWED_THROUGH (optional): upstream commits up to here were read and deliberately not taken
+# (e.g. the 0.9.24 email-verification gate), so only newer commits are reported as news.
+$reviewed = [regex]::Match($meta, '(?m)^REVIEWED_THROUGH=(\w+)').Groups[1].Value
+$base = if ($reviewed) { $reviewed } else { $commit }
 $head = (Invoke-RestMethod "https://api.github.com/repos/$repo/commits/main" -Headers @{ 'User-Agent' = 'hermes-setup' }).sha
-Write-Host "Vendored: $version @ $($commit.Substring(0,7))"
+Write-Host "Vendored: $version @ $($commit.Substring(0,7))$(if ($reviewed) { " (upstream reviewed through $($reviewed.Substring(0,7)))" })"
 Write-Host "Upstream: main @ $($head.Substring(0,7))"
-if ($head -eq $commit) { Write-Host 'Up to date.'; return }
+if ($head -eq $base) { Write-Host 'Up to date (nothing new since last review).'; return }
 
-$cmp = Invoke-RestMethod "https://api.github.com/repos/$repo/compare/$commit...$head" -Headers @{ 'User-Agent' = 'hermes-setup' }
+$cmp = Invoke-RestMethod "https://api.github.com/repos/$repo/compare/$base...$head" -Headers @{ 'User-Agent' = 'hermes-setup' }
 Write-Host "`n$($cmp.ahead_by) new commit(s):"
 $cmp.commits | ForEach-Object { '  {0}  {1}' -f $_.sha.Substring(0,7), ($_.commit.message -split "`n")[0] }
 Write-Host "`nFull diff: $($cmp.html_url)"

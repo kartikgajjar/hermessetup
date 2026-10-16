@@ -6,8 +6,8 @@
  * (Only `download_file` is privileged and lives on the executor.)
  */
 
-import { ExecutorError } from '../executor/types';
-import type { Executor, FrameOpts, Target } from '../executor/types';
+import { Parser } from 'htmlparser2';
+import { ExecutorError, type Executor, type FrameOpts, type Target } from '../executor/types';
 import { htmlToMarkdown } from './markdown-extract';
 
 export interface LinkOut {
@@ -33,80 +33,77 @@ export async function extractLinks(
     const root = ${root} ? document.querySelector(${root}) : document;
     if (!root) return [];
     const here = location.origin;
-    return [...root.querySelectorAll('a[href]')].map(a => ({
-      href: a.href, text: (a.textContent || '').trim().slice(0, 200),
-    })).filter(l => l.href && (${args.sameOriginOnly ? 'l.href.startsWith(here)' : 'true'}));
+    return [...root.querySelectorAll('a[href]')].filter(a => {
+      const raw = (a.getAttribute('href') || '').trim();
+      if (!raw || raw.startsWith('#')) return false;
+      try {
+        const url = new URL(a.href);
+        return !['javascript:', 'data:', 'blob:'].includes(url.protocol) &&
+          (${args.sameOriginOnly ? 'url.origin === here' : 'true'});
+      } catch { return false; }
+    }).map(a => ({ href: a.href, text: (a.textContent || '').trim().slice(0, 200) }));
   })()`;
 
   const frames: FrameOpts = { frameId: args.frameId, allFrames: args.allFrames };
-  let links: LinkOut[];
-  // eval is OFF by default (safe-mode) and a denial is THROWN as POLICY_DENIED, not
-  // returned as `{ ok: false }`, so the fallback below has to be reached by catching
-  // it. (Local fix, see VENDORED.md: before this, extract_links failed outright in the
-  // default configuration and this fallback was dead code.) Only an eval denial falls
-  // back; any other error still propagates.
-  let res: Awaited<ReturnType<Executor['eval']>> | null = null;
+  let links: LinkOut[] | undefined;
   try {
-    res = await ex.eval(expr, { tabId: args.tabId, ...frames });
+    const res = await ex.eval(expr, { tabId: args.tabId, ...frames });
+    if (res.ok && Array.isArray(res.value)) links = res.value as LinkOut[];
   } catch (err) {
-    if (!(err instanceof ExecutorError && err.code === 'POLICY_DENIED')) throw err;
+    if (!(err instanceof ExecutorError) || err.code !== 'POLICY_DENIED') throw err;
   }
-  if (res && res.ok && Array.isArray(res.value)) {
-    links = res.value as LinkOut[];
-  } else {
-    // Fallback: parse hrefs out of the HTML. The DOM's `a.href` is absolute but the
-    // serialized attribute is not, so resolve against the tab's URL and decode
-    // attribute entities (`&amp;` is everywhere in real hrefs); then apply the same
-    // sameOriginOnly filter the eval path applies.
-    const { html } = await ex.getHtml(args.selector ? { selector: args.selector } : undefined, {
+  if (!links) {
+    // Fallback: parse hrefs out of the HTML (e.g. when eval is policy-denied).
+    const result = await ex.getHtml(args.selector ? { selector: args.selector } : undefined, {
       tabId: args.tabId,
       ...frames,
     });
-    const base = await pageUrl(ex, args.tabId);
-    const origin = base ? new URL(base).origin : null;
-    links = [];
-    const re = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(html)) !== null) {
-      const href = resolveHref(decodeEntities(m[1]), base);
-      if (!href) continue;
-      if (args.sameOriginOnly && origin && !href.startsWith(origin)) continue;
-      links.push({ href, text: decodeEntities(m[2].replace(/<[^>]+>/g, '')).trim().slice(0, 200) });
+    const tabs = await ex.tabsList();
+    const tab = args.tabId ? tabs.find(t => t.tabId === args.tabId) : tabs.find(t => t.active);
+    let pageUrl = tab?.url;
+    const frameId = result.frameId ?? args.frameId;
+    if (frameId !== undefined && frameId !== 0) {
+      pageUrl = (await ex.framesList?.({ tabId: args.tabId }))?.find(f => f.frameId === frameId)?.url;
     }
+    if (!pageUrl) throw new ExecutorError('TARGET_GONE', 'could not resolve the page URL for link extraction');
+    links = linksFromHtml(result.html, pageUrl, args.sameOriginOnly);
   }
   return { links: refineLinks(links, args) };
 }
 
-/** The URL of `tabId` (or the active tab), or null when it cannot be determined. */
-async function pageUrl(ex: Executor, tabId?: string): Promise<string | null> {
-  try {
-    const tabs = await ex.tabsList();
-    const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs.find((t) => t.active);
-    return tab?.url || null;
-  } catch {
-    return null;
-  }
-}
-
-function decodeEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0*39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
-}
-
-/** Resolve a serialized href against the page URL; null for fragments and non-navigable schemes. */
-function resolveHref(href: string, base: string | null): string | null {
-  const h = href.trim();
-  if (!h || h.startsWith('#') || /^(javascript|data|blob):/i.test(h)) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(h)) return h; // already absolute: leave as written
-  try {
-    return new URL(h, base ?? undefined).href;
-  } catch {
-    return null; // relative href with no usable base
-  }
+/** Parse serialized HTML without executing page code; the parser decodes entities. */
+function linksFromHtml(html: string, pageUrl: string, sameOriginOnly = false): LinkOut[] {
+  const raw: LinkOut[] = [];
+  let current: LinkOut | undefined;
+  let baseHref: string | undefined;
+  let skippedDepth = 0;
+  new Parser({
+    onopentag(name, attrs) {
+      if (skippedDepth || ['script', 'style', 'template'].includes(name)) { skippedDepth++; return; }
+      if (name === 'base' && baseHref === undefined && attrs.href !== undefined) baseHref = attrs.href;
+      if (name === 'a' && attrs.href !== undefined) {
+        current = { href: attrs.href.trim(), text: '' };
+        raw.push(current);
+      }
+    },
+    ontext(text) { if (current && !skippedDepth) current.text += text; },
+    onclosetag(name) {
+      if (skippedDepth) { skippedDepth--; return; }
+      if (name === 'a') current = undefined;
+    },
+  }, { decodeEntities: true }).end(html);
+  const here = new URL(pageUrl);
+  let base = here.href;
+  try { if (baseHref !== undefined) base = new URL(baseHref, here).href; } catch { /* ignore invalid base */ }
+  return raw.flatMap(link => {
+    if (!link.href || link.href.startsWith('#')) return [];
+    try {
+      const url = new URL(link.href, base);
+      if (['javascript:', 'data:', 'blob:'].includes(url.protocol)) return [];
+      if (sameOriginOnly && url.origin !== here.origin) return [];
+      return [{ href: /^[a-z][a-z\d+.-]*:/i.test(link.href) ? link.href : url.href, text: link.text.trim().slice(0, 200) }];
+    } catch { return []; }
+  });
 }
 
 /**
