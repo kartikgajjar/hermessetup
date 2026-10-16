@@ -168,6 +168,19 @@ work) are not part of that set and get silently stranded after an update or fres
     there than `webmcp`'s old calibrated saved-reels adapter. Multiple Chrome profiles pair as separate profiles.
   - The separate `linkedin` server above is still registered and unchanged.
 
+- **spotify** (`github.com/skar404/spotify-mcp`, MIT, Go, 3 commits/1 author, installed 2026-10-16 with
+  `go install ...@a25a71c615c1cddae7655e1f283843d3374c4ef5` — pinned to the reviewed commit, never `@latest`) — 48
+  tools incl. playlist/library/follow writes and playback control; no read-only mode, and (no `trust:` key) they
+  run unprompted. It talks only to `accounts.spotify.com` / `api.spotify.com`. Secrets: `SPOTIFY_CLIENT_ID/SECRET/
+  REDIRECT_URI/TOKEN_PATH` live in Hermes's `.env` (copied from `~\.spotify-mcp.env`); `config.yaml` holds only
+  `${VAR}` placeholders (Hermes interpolates them in `tools\mcp_tool_config.py`, and stdio servers only get a
+  filtered environment, so `SPOTIFY_TOKEN_PATH` is passed explicitly). Token cache
+  `%USERPROFILE%\.config\spotify-mcp\token.json`, created by a one-time `spotify-mcp auth` (the binary reads env
+  vars only, not a `.env` file — load the file into the shell first). Spotify's refresh token dies after 180 days:
+  re-run `spotify-mcp auth`. The redirect URI must be the IP literal `http://127.0.0.1:8080/callback`. Not covered
+  by `03`/`04` backups beyond `.env` (token file is outside Hermes state); a reinstall needs `hermes mcp add` again
+  (pipe `Y`; `--args serve` last).
+
 ## Model routing
 
 - `model.default` / `model.provider` in `config.yaml` is the **global** default for every platform.
