@@ -37,7 +37,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string[]]$Sites = @('tipranks.com', 'facebook.com', 'linkedin.com', 'substack.com', 'medium.com'),
+    [string[]]$Sites = @('tipranks.com', 'facebook.com', 'linkedin.com', 'substack.com', 'medium.com', 'orats.com', 'finance.yahoo.com'),
     [switch]$NoRestart,
     [switch]$SkipBuild
 )
