@@ -45,7 +45,7 @@ generated reports there.
 
 `chrome-mcp/` is a vendored copy of [Mehmoodqureshi/chrome-mcp](https://github.com/Mehmoodqureshi/chrome-mcp)
 (MIT): a Chrome extension plus a local MCP server that lets Hermes read and drive the Chrome you are already
-signed into (TipRanks, Facebook, LinkedIn, Substack, Medium, ...). Because it is your real browser it gets past
+signed into (TipRanks, Facebook, LinkedIn, Substack, Medium, ORATS, Yahoo Finance, ...). Because it is your real browser it gets past
 Cloudflare/bot checks. Needs Node >= 18. Chrome must be running, or its tools fail.
 
 ```powershell
@@ -56,6 +56,30 @@ Then, once in Chrome: `chrome://extensions` -> Developer mode -> Load unpacked -
 and click **Connect** in the extension. Only the listed sites (and their subdomains) are reachable.
 `.\07-check-chrome-mcp-upstream.ps1` shows whether upstream has moved past the vendored copy; see
 `chrome-mcp/VENDORED.md`. Details and gotchas: `CLAUDE.md`.
+
+## Integrations (olk, spotify, linkedin)
+
+`02` runs `08` (chrome-mcp) and `10-setup-integrations.ps1` as its last step (skip with `-SkipIntegrations`).
+`10` can also be run on its own; it is idempotent and supports `-WhatIf`:
+
+```powershell
+.-setup-integrations.ps1 -WhatIf            # see what it would do
+.-setup-integrations.ps1 -OlkWrite          # also allow olk move/delete/send (default: read-only)
+.-setup-integrations.ps1 -Only spotify -Force
+```
+
+It installs `olk` ([rlrghb/olkcli](https://github.com/rlrghb/olkcli)) and `spotify-mcp`
+([skar404/spotify-mcp](https://github.com/skar404/spotify-mcp)) with `go install` **at pinned commits** (needs Go),
+and registers `olk`, `olk-bulk`, `spotify` and `linkedin` (needs `uvx`) with Hermes. Logins cannot be automated
+and are printed as a checklist at the end: `olk auth login --account <email>`, `spotify-mcp auth`, the LinkedIn
+`--login`, and loading the Chrome extension. Spotify needs your own app at developer.spotify.com (client id/secret go in
+Hermes's `.env`, never in `config.yaml`). `expertassist` is not scripted (its API key is entered interactively).
+Write-capable `olk` tools run with no Hermes approval prompt, so `SOUL.md`'s confirm-first rules are the only gate.
+
+## New-mail watcher (optional)
+
+`09-watch-mail.ps1` polls `olk mail delta` and runs a handler script for new mail (read-only; the first run only
+baselines). `-Install` schedules it; with no `-OnNewMail` it just logs.
 
 ## Discord Gateway Setup
 
@@ -89,12 +113,14 @@ the first time.
 | Script | Purpose |
 |---|---|
 | `01-cleanup-hermes.ps1` | Fully removes Hermes (config, auth, sessions, Docker containers, PATH/env vars). |
-| `02-install-hermes-secure.ps1` | Fresh install via the official installer, with a hardened, Docker-sandboxed, manual-approval baseline applied automatically, plus the `/output` report folder. |
+| `02-install-hermes-secure.ps1` | Fresh install via the official installer, with a hardened, Docker-sandboxed, manual-approval baseline applied automatically, the `/output` report folder, `SOUL.md` (incl. the direct-advisory mode), and the integrations (`08` + `10`). |
 | `03-backup-hermes-state.ps1` | Backs up config, credentials, memories, skills, sessions, cron jobs, platform pairings, plugins, and the autostart shortcut. |
 | `04-restore-hermes-state.ps1` | Restores everything `03` backed up onto a fresh install, reinstalls any optional platform packages (e.g. Discord), and starts the gateway. |
 | `05-update-hermes.ps1` | Runs `hermes update` with a bounded retry around a known Windows gateway-discovery race instead of letting it abort outright. |
 | `06-reap-hermes-containers.ps1` | Removes orphaned Docker sandbox containers (`hermes-agent=1`) left running when a Hermes process dies before its idle reaper fires. `-Install` schedules it every 10 min; `-Now` reaps all idle ones immediately. |
 | `07-check-chrome-mcp-upstream.ps1` | Read-only: compares the vendored chrome-mcp commit with upstream `main` and lists new commits. |
+| `10-setup-integrations.ps1` | Installs/registers olk, olk-bulk, spotify and linkedin MCP servers at pinned versions (called by `02`; idempotent, `-WhatIf`). Prints the manual login checklist. |
+| `09-watch-mail.ps1` | Polls `olk mail delta` for new mail and runs a handler; `-Install` schedules it, `-Reset` re-baselines. |
 | `08-setup-chrome-mcp.ps1` | Builds the vendored chrome-mcp, installs its extension folder, registers it with Hermes for the given `-Sites`, and restarts the gateway. Re-run to change the site list. |
 
 ## Clean Re-install

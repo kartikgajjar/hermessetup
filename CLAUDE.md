@@ -27,6 +27,15 @@ their face.
 .\04-restore-hermes-state.ps1         # restore state, packages, gateway
 ```
 
+`02` ends by running `08-setup-chrome-mcp.ps1` and `10-setup-integrations.ps1` (olk, olk-bulk, spotify,
+linkedin at pinned commits; olk read-only unless `-OlkWrite`; `-SkipIntegrations` to opt out). Each
+integration's login is interactive and printed as a checklist — see "MCP servers configured here".
+`09-watch-mail.ps1` is the optional new-mail poller. **`go install` builds report `olk dev`** (no ldflags):
+check the version with `go version -m <exe>`, not `olk version`. **`make install` on Windows writes an
+extensionless `olk`** next to the real `olk.exe` (the Makefile uses `-o ...bin/olk`), leaving the old `.exe`
+ahead on PATH for PowerShell and Hermes — use `go install ...@<sha>` (stop the gateway first if the `.exe`
+is locked; a running one can be renamed over, so open sessions keep the old image until they reload).
+
 `.\05-update-hermes.ps1` is the normal day-to-day updater (not a reinstall) — prefer it over raw
 `hermes update` even for a quick check; it self-heals two real gaps a bare `hermes update` leaves
 behind (below). `.\06-reap-hermes-containers.ps1 -Install` is a one-time setup step (registers a

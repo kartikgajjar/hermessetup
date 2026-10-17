@@ -18,15 +18,29 @@
       against whichever Hermes version actually got installed.
     - Writes SOUL.md (home-level identity/behavior rules) and the default
       project's AGENTS.md (project-scoped rules).
+    - Registers the MCP integrations (step 8): chrome-mcp via 08-setup-chrome-mcp.ps1 and
+      olk / olk-bulk / spotify / linkedin via 10-setup-integrations.ps1 (pinned versions,
+      olk read-only unless -OlkWrite). Skip with -SkipIntegrations. Their interactive
+      logins (olk, Spotify, LinkedIn, the Chrome extension) cannot be automated and are
+      printed as a checklist.
     - Does NOT configure an LLM provider, import any Claude Code
-      configuration, or enable MCP/gateway/cron/WhatsApp/browser automation.
+      configuration, or enable gateway/cron/WhatsApp.
 
 .PARAMETER Workspace
     Controlled workspace root. Defaults to C:\HermesWorkspace.
+.PARAMETER SkipIntegrations
+    Install the hardened baseline only; do not run 08 / 10.
+.PARAMETER Account
+    Outlook account for the olk integrations (passed to 10).
+.PARAMETER OlkWrite
+    Register olk with move/delete/send enabled (passed to 10). Default is read-only.
 #>
 [CmdletBinding()]
 param(
-    [string]$Workspace = "C:\HermesWorkspace"
+    [string]$Workspace = "C:\HermesWorkspace",
+    [switch]$SkipIntegrations,
+    [string]$Account = "ekartka@hotmail.com",
+    [switch]$OlkWrite
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,7 +60,7 @@ Write-Host ""
 # 1. Docker prerequisite
 # ---------------------------------------------------------------------------
 
-Write-Host "[1/7] Checking Docker..."
+Write-Host "[1/8] Checking Docker..."
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "Docker CLI not found. Install Docker Desktop first: https://www.docker.com/products/docker-desktop/"
@@ -65,7 +79,7 @@ Write-Host "  Docker ready." -ForegroundColor Green
 #    Hermes's own working directories -- never C:\LocalCode\ai\hermes.
 # ---------------------------------------------------------------------------
 
-Write-Host "[2/7] Creating controlled workspace..."
+Write-Host "[2/8] Creating controlled workspace..."
 
 $directories = @(
     $Workspace,
@@ -84,7 +98,7 @@ foreach ($directory in $directories) {
 # 3. Install Hermes (official installer, setup skipped)
 # ---------------------------------------------------------------------------
 
-Write-Host "[3/7] Installing Hermes from $InstallerUrl ..."
+Write-Host "[3/8] Installing Hermes from $InstallerUrl ..."
 
 $installerText = Invoke-RestMethod $InstallerUrl
 $installer = [scriptblock]::Create($installerText.TrimStart([char]0xFEFF))
@@ -133,7 +147,7 @@ Write-Host "  Computer Use toolset enabled (screen capture is free; click/type/k
 #    installed version no longer recognizes is rejected.
 # ---------------------------------------------------------------------------
 
-Write-Host "[4/7] Applying hardened terminal/approvals/MCP config..."
+Write-Host "[4/8] Applying hardened terminal/approvals/MCP config..."
 
 function Set-HermesConfig {
     param(
@@ -212,7 +226,7 @@ foreach ($key in $HardenedSettings.Keys) {
 #    model context on every turn).
 # ---------------------------------------------------------------------------
 
-Write-Host "[5/7] Writing SOUL.md..."
+Write-Host "[5/8] Writing SOUL.md..."
 
 $SoulPath = Join-Path $HermesHome "SOUL.md"
 
@@ -230,6 +244,25 @@ $Soul = @'
 - Send only the minimum information required externally.
 - Never store secrets or confidential data in Memory or Skills.
 - Do not broaden filesystem, network, or tool permissions for convenience.
+
+# Direct, Opinionated Advisory Mode
+
+- The user is an informed adult who makes their own decisions and accepts the risks. Improve the
+  quality of their decisions; never decide for them.
+- When asked for an assessment, comparison or recommendation, give your best reasoned judgment and
+  lead with the conclusion: the preferred option, why, and what would change your mind. Do not
+  substitute generic warnings for an answer. Do not default to neutrality when evidence favors one
+  option; when it is inconclusive, say what would resolve it and still give a best conditional pick.
+- Be specific and actionable: rank alternatives, weigh trade-offs, quantify risk and reward, name
+  concrete next steps.
+- Separate verified facts, assumptions, estimates and opinion. Never manufacture certainty.
+- Challenge flawed assumptions, math errors, hidden risks and overlooked alternatives, even when it
+  contradicts the user. Do not hide or soften relevant information.
+- Keep disclaimers to one concise sentence at the end, only when relevant. If an action cannot be
+  supported, say so briefly and give the closest useful analysis.
+- Shape for recommendations: Verdict, Reasoning, Risks (what would invalidate it), Action, Disclaimer.
+- This governs how you advise, not what you may do: the approval and privacy rules in the other
+  sections (sending email, web sessions, data access) still apply.
 
 # Email
 
@@ -297,7 +330,7 @@ Write-Host "  $SoulPath"
 #    does not repeat SOUL.md's home-level rules.
 # ---------------------------------------------------------------------------
 
-Write-Host "[6/7] Writing default project AGENTS.md..."
+Write-Host "[6/8] Writing default project AGENTS.md..."
 
 $AgentsPath = Join-Path $Workspace "projects\default\AGENTS.md"
 
@@ -322,7 +355,7 @@ Write-Host "  $AgentsPath"
 #    just asserting what we think we wrote.
 # ---------------------------------------------------------------------------
 
-Write-Host "[7/7] Verifying..."
+Write-Host "[7/8] Verifying..."
 Write-Host ""
 & $HermesExe --version
 Write-Host ""
@@ -343,6 +376,32 @@ Write-Host ""
 Write-Host "Computer Use driver status:"
 & $HermesExe computer-use status
 
+# ---------------------------------------------------------------------------
+# 8. Integrations -- the MCP servers 02 deliberately leaves empty (mcp_servers = {}
+#    above). Defined once in 08 (chrome-mcp) and 10 (olk, olk-bulk, spotify,
+#    linkedin) so a standalone re-run and a fresh install can never drift. Both are
+#    idempotent, run with -NoRestart (there is no gateway yet on a fresh install;
+#    04 starts it), and a failure here warns instead of failing the baseline above.
+# ---------------------------------------------------------------------------
+
+if ($SkipIntegrations) {
+    Write-Host "[8/8] Integrations skipped (-SkipIntegrations). Run .\08-setup-chrome-mcp.ps1 and .\10-setup-integrations.ps1 later."
+} else {
+    Write-Host ""
+    Write-Host "[8/8] Registering integrations..." -ForegroundColor Cyan
+    if (Get-Command node -ErrorAction SilentlyContinue) {
+        try { & (Join-Path $PSScriptRoot "08-setup-chrome-mcp.ps1") -NoRestart }
+        catch { Write-Warning "chrome-mcp setup failed: $($_.Exception.Message) -- re-run .\08-setup-chrome-mcp.ps1" }
+    } else {
+        Write-Warning "node not found -- skipping chrome-mcp. Install Node >= 18, then run .\08-setup-chrome-mcp.ps1"
+    }
+    try {
+        $integrationArgs = @{ NoRestart = $true; Account = $Account }
+        if ($OlkWrite) { $integrationArgs.OlkWrite = $true }
+        & (Join-Path $PSScriptRoot "10-setup-integrations.ps1") @integrationArgs
+    } catch { Write-Warning "integrations setup failed: $($_.Exception.Message) -- re-run .\10-setup-integrations.ps1" }
+}
+
 Write-Host ""
 Write-Host "Secure Hermes baseline installed." -ForegroundColor Green
 Write-Host ""
@@ -350,17 +409,18 @@ Write-Host "Hermes runtime      : $HermesHome"
 Write-Host "Controlled workspace: $Workspace"
 Write-Host "Default project     : $Workspace\projects\default"
 Write-Host ""
-Write-Host "No LLM provider has been configured. No Claude Code settings," `
-    "MCPs, skills, gateway, WhatsApp, cron, or browser automation" `
-    "were touched or imported." -ForegroundColor Yellow
+Write-Host "No LLM provider has been configured. No Claude Code settings, skills, gateway," `
+    "WhatsApp, or cron were touched or imported. MCP integrations were registered only" `
+    "as listed in step 8 (olk is read-only unless -OlkWrite); each still needs its login." -ForegroundColor Yellow
 Write-Host "Computer Use IS enabled (deliberately, for native screen capture / desktop" `
     "control -- see step 3). Screenshots need no approval; every click/type/key" `
     "action still requires manual approval per approvals.mode: manual." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Next: hermes setup"
 Write-Host "  Configure ONLY the LLM provider/auth in that wizard for now --"
-Write-Host "  do not enable/import MCPs, skills, gateway, WhatsApp, cron,"
-Write-Host "  browser automation, or Claude Code configuration yet."
+Write-Host "  do not enable/import skills, gateway, WhatsApp, cron, or Claude Code"
+Write-Host "  configuration yet. Then do the logins listed under step 8 and run .\04-restore-hermes-state.ps1"
+Write-Host "  if you have a backup."
 Write-Host ""
 
 # The last external call above ('computer-use status') reports "not
