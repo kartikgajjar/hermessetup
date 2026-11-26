@@ -1,0 +1,49 @@
+{
+  "$comment": "The one path map: product path globs -> feature ids (docs/features/) and pages. JSON syntax, valid YAML.",
+  "entries": [
+    {
+      "id": "olk-bulk",
+      "paths": [
+        "olk-bulk-mcp.py"
+      ],
+      "feature": "F-olk-bulk"
+    },
+    {
+      "id": "chrome-mcp",
+      "paths": [
+        "chrome-mcp/src/**",
+        "chrome-mcp/shared/**",
+        "chrome-mcp/extension/**",
+        "chrome-mcp/package.json",
+        "08-setup-chrome-mcp.ps1"
+      ],
+      "feature": "F-chrome-mcp"
+    },
+    {
+      "id": "scripts",
+      "paths": [
+        "0*.ps1",
+        "10-*.ps1"
+      ],
+      "feature": "F-scripts"
+    },
+    {
+      "id": "update",
+      "paths": [
+        "05-update-hermes.ps1"
+      ],
+      "feature": "F-update-plan"
+    },
+    {
+      "id": "readme",
+      "paths": [
+        "README.md",
+        "notes-*.md",
+        "CLAUDE.md"
+      ],
+      "pages": [
+        "README.md"
+      ]
+    }
+  ]
+}

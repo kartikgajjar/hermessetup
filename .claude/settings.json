@@ -1,0 +1,42 @@
+{
+  "$comment": "Hand-edited 2026-11-26 at the owner's request: no hooks, no deny/ask rules (personal repo). Original generated file backed up outside the repo.",
+  "permissions": {
+    "allow": [
+      "Bash(python tools/status.py*)",
+      "Bash(python tools/profile.py tier*)",
+      "Bash(python tools/profile.py level*)",
+      "Bash(python tools/profile.py propose*)",
+      "Bash(python tools/profile.py settings --check*)",
+      "Bash(python tools/gate.py*)",
+      "Bash(python tools/check.py*)",
+      "Bash(python tools/gen.py --check*)",
+      "Bash(python tools/dispatch.py fingerprint*)",
+      "Bash(python tools/dispatch.py verify*)",
+      "Bash(python tools/dispatch.py reproof*)",
+      "Bash(python tools/mcp_probe.py*)",
+      "Bash(python -m unittest*)",
+      "Bash(npm --prefix chrome-mcp test*)",
+      "Bash(pwsh -NoProfile -File *05-update-hermes.ps1 -Plan*)",
+      "Bash(git status*)",
+      "Bash(git -C * status*)",
+      "Bash(git diff*)",
+      "Bash(git -C * diff*)",
+      "Bash(git log*)",
+      "Bash(git -C * log*)",
+      "Bash(git show*)",
+      "Bash(git -C * show*)",
+      "Bash(git branch --show-current*)",
+      "Bash(git -C * branch --show-current*)",
+      "Bash(git rev-parse*)",
+      "Bash(git -C * rev-parse*)",
+      "Bash(git worktree list*)",
+      "Bash(git -C * worktree list*)",
+      "Bash(git ls-files*)",
+      "Bash(git -C * ls-files*)",
+      "Bash(git grep*)",
+      "Bash(git -C * grep*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

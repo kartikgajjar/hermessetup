@@ -1,0 +1,35 @@
+name: factory-gate
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  factory-gate:
+    name: factory-gate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: chrome-mcp dependencies (only when chrome-mcp changed)
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "pull_request") { $base = "origin/${{ github.base_ref }}" } else { $base = "${{ github.event.before }}" }
+          if ($base -match '^0+$') { $base = "HEAD~1" }
+          if (git diff --name-only $base HEAD -- chrome-mcp) { npm ci --prefix chrome-mcp }
+      - name: gate
+        shell: pwsh
+        run: |
+          git config user.email "ci@example.com"; git config user.name "ci"
+          if ("${{ github.event_name }}" -eq "pull_request") { $base = "origin/${{ github.base_ref }}" } else { $base = "${{ github.event.before }}" }
+          if ($base -match '^0+$') { $base = "HEAD~1" }
+          python tools/gate.py --base $base --merge-result

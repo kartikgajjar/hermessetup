@@ -1,0 +1,45 @@
+{
+  "$comment": "Risk paths (U21): a packet touching one gets the tier's stronger treatment. high_risk: agent-config files only the lead changes, with an approval U<n>. JSON syntax, valid YAML. High-risk file: only the user changes it.",
+  "paths": [
+    "01-cleanup-hermes.ps1",
+    "02-install-hermes-secure.ps1",
+    "04-restore-hermes-state.ps1",
+    "05-update-hermes.ps1",
+    "olk-bulk-mcp.py",
+    "09-watch-mail.ps1",
+    "08-setup-chrome-mcp.ps1",
+    "10-setup-integrations.ps1",
+    "chrome-mcp/src/security/**",
+    "chrome-mcp/shared/policy.ts",
+    ".claude/**",
+    "tools/hooks/**",
+    "tools/agents/**",
+    "tools/skills/**",
+    ".github/**",
+    "config/**",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "**/*.env",
+    "**/.env",
+    "**/*token*",
+    "**/*secret*"
+  ],
+  "high_risk": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".claude/**",
+    "tools/hooks/**",
+    "tools/agents/**",
+    "tools/skills/**",
+    ".mcp.json",
+    "config/**",
+    ".github/**"
+  ],
+  "automated_pushers": [],
+  "privacy_allow": [],
+  "privacy_skip": [
+    "chrome-mcp/**",
+    "docs/prd/**",
+    "CHANGELOG.md"
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verdict record",
+  "type": "object",
+  "required": [
+    "item",
+    "row",
+    "verdict",
+    "by",
+    "run_id",
+    "session_id",
+    "feature_ids",
+    "evidence",
+    "product_files",
+    "product_fingerprint",
+    "support_files",
+    "support_fingerprint",
+    "base_commit",
+    "time",
+    "proof",
+    "proof_exit"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "row": {
+      "type": "integer"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "PASS+NOTES",
+        "FAIL"
+      ]
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "author",
+        "verifier"
+      ]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "feature_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "product_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "product_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "support_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "support_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "time": {
+      "type": "string"
+    },
+    "proof": {
+      "type": "string"
+    },
+    "proof_exit": {
+      "type": "integer"
+    },
+    "approval": {
+      "type": "string",
+      "pattern": "^U[0-9]+$"
+    },
+    "refreshed_from": {
+      "type": "string"
+    },
+    "legacy": {
+      "type": "boolean"
+    }
+  }
+}

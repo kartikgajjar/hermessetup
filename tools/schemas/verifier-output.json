@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "hs-verifier output",
+  "type": "object",
+  "required": [
+    "verdict",
+    "feature_ids",
+    "evidence",
+    "notes",
+    "findings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "PASS+NOTES",
+        "FAIL"
+      ]
+    },
+    "feature_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "what was run on the real surface, the action and the resulting state"
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "problem",
+          "blocking"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

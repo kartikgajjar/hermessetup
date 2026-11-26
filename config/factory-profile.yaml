@@ -1,0 +1,94 @@
+{
+  "$comment": "Factory profile (bootstrap v2.6). JSON syntax, valid YAML. High-risk file: only the user changes it.",
+  "bootstrap_install": "in progress",
+  "project": "hermessetup",
+  "purpose": "PowerShell scripts that install, back up, restore and update Hermes Agent on this Windows machine, plus its personal MCP integrations (olk, olk-bulk, chrome-mcp, spotify, linkedin).",
+  "agent_prefix": "hs",
+  "install_mode": "fresh",
+  "tools": "Claude Code only",
+  "claude_md": "tracked",
+  "default_branch": "main",
+  "facts": {
+    "lifetime": {
+      "value": "kept",
+      "by": "user",
+      "date": "2026-11-23",
+      "decision": "U8"
+    },
+    "exposure": {
+      "value": "internal",
+      "by": "user",
+      "date": "2026-11-23",
+      "decision": "U9",
+      "note": "The GitHub repo itself is public; re-derive the tier if others start running these scripts."
+    },
+    "data": {
+      "value": "internal metadata",
+      "by": "user",
+      "date": "2026-11-23",
+      "decision": "U10"
+    },
+    "transactions": {
+      "value": "internal writes",
+      "by": "user",
+      "date": "2026-11-23",
+      "decision": "U11"
+    },
+    "availability": {
+      "value": "best effort",
+      "by": "user",
+      "date": "2026-11-23",
+      "decision": "U12"
+    },
+    "regulation": {
+      "value": "none",
+      "by": "user",
+      "date": "2026-11-23",
+      "decision": "U13"
+    }
+  },
+  "approver": "kartikgajjar",
+  "waived_controls": [],
+  "real_data": false,
+  "autonomy": {
+    "ceiling": "A3",
+    "earned": "A0",
+    "ceiling_decision": "U14",
+    "history": [
+      {
+        "date": "2026-11-23",
+        "earned": "A0",
+        "why": "start"
+      }
+    ]
+  },
+  "a2_evidence": {
+    "min_packets": 10,
+    "first_time_right": 0.8,
+    "decision": "U18"
+  },
+  "enforcement": {
+    "remote": "github",
+    "ci": ".github/workflows/factory-gate.yml",
+    "main_protected": false,
+    "integration": "local",
+    "$comment": "main_protected and integration=pr are set by the user after protecting main with factory-gate as a required check (U5)."
+  },
+  "max_parallel_agents": 3,
+  "models": {
+    "strong": "claude-opus-5-5",
+    "standard": "claude-sonnet-5-5",
+    "cheap": "claude-haiku-5-5",
+    "decision": "U17"
+  },
+  "extension_triggers": {
+    "x1_open_rows": 8,
+    "x1_replans_per_release": 2,
+    "x2_specified_share": 0.33,
+    "x3": "user wants >1 lane and a worktree builds+tests in ~5 min",
+    "x4": "first release",
+    "x5": "met (README, notes-mcp-*.md)",
+    "x6": "second ship or a lesson seen twice",
+    "decision": "U19"
+  }
+}

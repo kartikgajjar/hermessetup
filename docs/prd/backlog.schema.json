@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "factory backlog (the spec)",
+  "type": "object",
+  "required": [
+    "items"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "request",
+          "decisions",
+          "acceptance",
+          "tasks"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
+          },
+          "request": {
+            "type": "object",
+            "required": [
+              "words",
+              "date"
+            ],
+            "properties": {
+              "words": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              }
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "design_record": {
+            "type": "string"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "n",
+                "task",
+                "owner",
+                "model_class",
+                "owned_files",
+                "depends_on",
+                "proof",
+                "bar"
+              ],
+              "properties": {
+                "n": {
+                  "type": "integer"
+                },
+                "task": {
+                  "type": "string"
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "model_class": {
+                  "type": "string",
+                  "enum": [
+                    "strong",
+                    "standard",
+                    "cheap"
+                  ]
+                },
+                "owned_files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "depends_on": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "proof": {
+                  "type": "string"
+                },
+                "interface_change": {
+                  "type": "boolean"
+                },
+                "bar": {
+                  "type": "object",
+                  "required": [
+                    "proof",
+                    "live",
+                    "verdict"
+                  ],
+                  "properties": {
+                    "proof": {
+                      "type": "string"
+                    },
+                    "live": {
+                      "type": "string"
+                    },
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "author",
+                        "verifier"
+                      ]
+                    },
+                    "feature_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

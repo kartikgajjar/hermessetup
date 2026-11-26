@@ -48,3 +48,17 @@ hermes mcp add expertassist --url https://mcp.expertassist.work/mcp --auth heade
 Answer: `y` (requires auth) → header name `x-api-key` → header value (your key).
 
 Verify with `hermes mcp test expertassist` — should report `✓ Tools discovered: 13`.
+
+## Local endpoint (2026-11-07): `http://localhost:4101/mcp`
+
+The same ExpertAssist server (v1.9.0) also runs locally in a Docker container, listening on
+port 4101, and accepts the same `x-api-key`. Hermes now points at `http://localhost:4101/mcp`
+instead of `https://mcp.expertassist.work/mcp`, because the public hostname is not reachable
+from this machine's network. Symptom when the public URL is unreachable: Hermes parks the server
+after 5 reconnect attempts and the agent reports "`mcp__expertassist__*` is not a known tool name"
+because the tools were never registered.
+
+Consequence: the local endpoint only works while that Docker container is running (Docker
+Desktop is already required for Hermes's terminal sandbox). To go back to the public URL:
+`hermes config set mcp_servers.expertassist.url https://mcp.expertassist.work/mcp` and
+`hermes gateway restart`.
